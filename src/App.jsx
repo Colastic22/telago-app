@@ -1520,7 +1520,7 @@ const SummarizerView = () => {
 
     try {
       const apiKey = GEMINI_API_KEY;
-      if (!apiKey || apiKey === "AIzaSyCCOi_jmlD3aJ5b_DKl_j3t83MrQRO9230") {
+      if (!apiKey || apiKey === "ISI_DENGAN_API_KEY_GEMINI_KAMU") {
          setError("API Key tidak valid atau kosong.");
          setIsLoading(false);
          return;
@@ -1574,7 +1574,7 @@ const SummarizerView = () => {
     
     try {
        const apiKey = GEMINI_API_KEY;
-       if (!apiKey || apiKey === "AIzaSyCCOi_jmlD3aJ5b_DKl_j3t83MrQRO9230") { throw new Error("API Key tidak ditemukan."); }
+       if (!apiKey || apiKey === "ISI_DENGAN_API_KEY_GEMINI_KAMU") { throw new Error("API Key tidak ditemukan."); }
 
        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
        const prompt = `Buatkan kuis pilihan ganda berjumlah persis 5 soal berdasarkan topik: "${topicInput}". Kuis ini harus berstandar pendidikan kurikulum Indonesia, berkualitas tinggi, dan menguji pemahaman mendalam.`;
