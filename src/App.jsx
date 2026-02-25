@@ -1518,9 +1518,10 @@ const SummarizerView = () => {
     setQuizStatus('idle'); 
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) {
-         setError("API Key tidak ditemukan. Pastikan VITE_GEMINI_API_KEY sudah diatur di file .env atau pengaturan Hosting.");
+      // PERBAIKAN DI SINI: Memanggil langsung dari variabel yang sudah di-hardcode
+      const apiKey = GEMINI_API_KEY;
+      if (!apiKey || apiKey === "ISI_DENGAN_API_KEY_GEMINI_KAMU") {
+         setError("API Key tidak valid atau kosong.");
          setIsLoading(false);
          return;
       }
@@ -1560,8 +1561,9 @@ const SummarizerView = () => {
     setQuizError('');
     
     try {
-       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-       if (!apiKey) { throw new Error("API Key tidak ditemukan."); }
+       // PERBAIKAN DI SINI: Memanggil langsung dari variabel yang sudah di-hardcode
+       const apiKey = GEMINI_API_KEY;
+       if (!apiKey || apiKey === "ISI_DENGAN_API_KEY_GEMINI_KAMU") { throw new Error("API Key tidak ditemukan."); }
 
        const genAI = new GoogleGenerativeAI(apiKey);
        const model = genAI.getGenerativeModel({
