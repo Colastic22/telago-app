@@ -1068,11 +1068,13 @@ const SummarizerView = () => {
       2. RUMUS MATEMATIKA: Wajib gunakan simbol asli (seperti x², √, Σ, +, -). Jangan gunakan pagar (#) atau bintang (*). Jika ada rumus penting, bungkus dengan <div class="formula-box">RUMUS</div>.
       3. GUNAKAN EMOTIKON yang relevan di setiap paragraf atau poin list (Contoh: 🌍, 🚀, 💡, 🔬).
       4. FITUR STABILO: Anda WAJIB memberikan highlight kuning menggunakan tag <mark>kata penting</mark>. JUMLAHNYA HARUS PERSIS 5 SAMPAI 6 HIGHLIGHT di seluruh teks. Jangan kurang, jangan lebih!
-      5. ANIMASI (PENTING!): Jangan memberikan gambar URL. Sebagai gantinya, sisipkan SATU (1) TAG ANIMASI di bawah ini JIKA DAN HANYA JIKA topiknya SANGAT RELEVAN. JIKA TIDAK ADA YANG RELEVAN (Misal: Ekonomi, Sejarah, Sistem Pencernaan), DILARANG KERAS MEMASANG ANIMASI APAPUN!
-         Pilihan Animasi 3D: [ANIMASI_3D_ATOM] (Kimia), [ANIMASI_3D_SOLAR] (Tata Surya), [ANIMASI_3D_GEOMETRI] (Matematika Ruang), [ANIMASI_3D_DNA] (Biologi Gen), [ANIMASI_3D_MOLECULE] (Senyawa), [ANIMASI_3D_EARTH] (Bumi), [ANIMASI_3D_CELL] (Biologi Sel), [ANIMASI_3D_GRAVITY] (Fisika Gravitasi).
-         Pilihan Animasi 2D: [ANIMASI_2D_WAVE] (Fisika Gelombang), [ANIMASI_2D_PARABOLA] (Matematika Kuadrat), [ANIMASI_2D_PENDULUM] (Bandul), [ANIMASI_2D_SORTING] (Algoritma), [ANIMASI_2D_TERMINAL] (Coding), [ANIMASI_2D_PYTHAGORAS] (Segitiga Siku).`;
+      5. ANIMASI (SANGAT KETAT!): Sisipkan MAKSIMAL SATU (1) TAG ANIMASI HANYA JIKA topik BENAR-BENAR COCOK 100%.
+         - JIKA TOPIK ADALAH SEJARAH NEGARA (cth: Indonesia Merdeka), ILMU SOSIAL, EKONOMI, BAHASA, ATAU BIOLOGI PENCERNAAN: DILARANG KERAS MENGGUNAKAN ANIMASI BUMI ATAU APAPUN!
+         - [ANIMASI_3D_EARTH] HANYA BOLEH dipakai untuk topik Geografi Fisik planet bumi/struktur bumi. BUKAN UNTUK SEJARAH/NEGARA!
+         - Pilihan Animasi 3D Lainnya: [ANIMASI_3D_ATOM] (Kimia/Fisika), [ANIMASI_3D_SOLAR] (Tata Surya), [ANIMASI_3D_GEOMETRI] (Matematika Ruang), [ANIMASI_3D_DNA] (Biologi Gen), [ANIMASI_3D_MOLECULE] (Senyawa), [ANIMASI_3D_CELL] (Biologi Sel), [ANIMASI_3D_GRAVITY] (Fisika Gravitasi).
+         - Pilihan Animasi 2D: [ANIMASI_2D_WAVE] (Fisika Gelombang), [ANIMASI_2D_PARABOLA] (Matematika Kuadrat), [ANIMASI_2D_PENDULUM] (Bandul), [ANIMASI_2D_SORTING] (Algoritma), [ANIMASI_2D_TERMINAL] (Coding), [ANIMASI_2D_PYTHAGORAS] (Segitiga Siku).`;
 
-      const prompt = `Tolong ringkas dan jelaskan materi berikut dengan sangat baik, terstruktur, lengkap tapi padat sesuai instruksi system: "${topicInput}"`;
+      const prompt = `Tolong ringkas dan jelaskan materi/topik berikut secara komprehensif:\n\n${topicInput}`;
       
       let text = await callOpenRouterAPI(prompt, systemInstruction);
       
@@ -1083,9 +1085,12 @@ const SummarizerView = () => {
          // Replace Tag 3D dengan Iframe Asli
          text = text.replace(/\[ANIMASI_3D_ATOM\]/gi, get3DIframe('atom'));
          text = text.replace(/\[ANIMASI_3D_SOLAR\]/gi, get3DIframe('solar'));
+         text = text.replace(/\[ANIMASI_3D_TATA_SURYA\]/gi, get3DIframe('solar')); // Fallback just in case
          text = text.replace(/\[ANIMASI_3D_GEOMETRI\]/gi, get3DIframe('geometry'));
          text = text.replace(/\[ANIMASI_3D_DNA\]/gi, get3DIframe('dna'));
+         text = text.replace(/\[ANIMASI_3D_MOLEKUL\]/gi, get3DIframe('molecule'));
          text = text.replace(/\[ANIMASI_3D_MOLECULE\]/gi, get3DIframe('molecule'));
+         text = text.replace(/\[ANIMASI_3D_BUMI\]/gi, get3DIframe('earth'));
          text = text.replace(/\[ANIMASI_3D_EARTH\]/gi, get3DIframe('earth'));
          text = text.replace(/\[ANIMASI_3D_CELL\]/gi, get3DIframe('cell'));
          text = text.replace(/\[ANIMASI_3D_GRAVITY\]/gi, get3DIframe('gravity'));
@@ -1113,20 +1118,12 @@ const SummarizerView = () => {
     setQuizError('');
     
     try {
-       if (!GEMINI_API_KEY) { throw new Error("API Key kosong di Hosting Vercel."); }
-
-       const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-       const model = genAI.getGenerativeModel({ 
-           model: "gemini-1.5-flash",
-           systemInstruction: `Anda adalah guru ahli yang membuat soal evaluasi berkualitas. Anda HARUS mengembalikan data HANYA dalam format JSON array murni tanpa dibungkus markdown apapun. Format JSON wajib seperti ini:\n[\n  {\n    "question": "Pertanyaan soal disini",\n    "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],\n    "correctIndex": 0,\n    "explanation": "Penjelasan detail dan rasional mengapa opsi tersebut benar."\n  }\n]\nPerhatikan: correctIndex adalah angka index (0-3) dari jawaban yang benar.`,
-           generationConfig: { responseMimeType: "application/json" } // Memaksa format JSON agar terhindar dari Error Parsing
-       });
-
-       // PERBAIKAN: Memasukkan variabel summaryResult agar kuis 100% relevan dengan bacaan
+       const systemInstruction = `Anda adalah guru ahli yang membuat soal evaluasi berkualitas. Anda HARUS mengembalikan data HANYA dalam format JSON array murni tanpa dibungkus markdown apapun. Format JSON wajib seperti ini:\n[\n  {\n    "question": "Pertanyaan soal disini",\n    "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],\n    "correctIndex": 0,\n    "explanation": "Penjelasan detail dan rasional mengapa opsi tersebut benar."\n  }\n]\nPerhatikan: correctIndex adalah angka index (0-3) dari jawaban yang benar.`;
+       
+       // PERBAIKAN: Membaca teks hasil summary agar sangat relevan!
        const prompt = `Berikut adalah ringkasan materi yang baru saja dipelajari:\n\n"""\n${summaryResult}\n"""\n\nBerdasarkan materi di atas, buatkan kuis pilihan ganda berjumlah persis 5 soal.\nSyarat Mutlak:\n1. Fokus dan sangat relevan dengan isi materi di atas (tidak melenceng ke topik luar).\n2. Uji pemahaman mendalam dan nalar analitis.\n3. JANGAN sekadar menyalin kalimat secara persis dari materi (jangan plek ketiplek/hanya menghafal).\n4. Berstandar pendidikan dan berkualitas tinggi.`;
 
-       const result = await model.generateContent(prompt);
-       let text = result.response.text();
+       let text = await callOpenRouterAPI(prompt, systemInstruction);
        
        // Pembersihan JSON yang Anti-Error
        text = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
