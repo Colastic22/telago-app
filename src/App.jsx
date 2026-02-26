@@ -1113,11 +1113,22 @@ const SummarizerView = () => {
     setQuizError('');
     
     try {
-       const systemInstruction = `Anda adalah guru ahli yang membuat soal evaluasi berkualitas. Anda HARUS mengembalikan data HANYA dalam format JSON array murni tanpa dibungkus markdown apapun. Format JSON wajib seperti ini:\n[\n  {\n    "question": "Pertanyaan soal disini",\n    "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],\n    "correctIndex": 0,\n    "explanation": "Penjelasan detail dan rasional mengapa opsi tersebut benar."\n  }\n]\nPerhatikan: correctIndex adalah angka index (0-3) dari jawaban yang benar.`;
-       const prompt = `Buatkan kuis pilihan ganda berjumlah persis 5 soal berdasarkan topik: "${topicInput}". Kuis ini harus berstandar pendidikan tinggi, berkualitas, dan menguji pemahaman mendalam.`;
+       if (!GEMINI_API_KEY) { throw new Error("API Key kosong di Hosting Vercel."); }
 
-       let text = await callOpenRouterAPI(prompt, systemInstruction);
+       const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+       const model = genAI.getGenerativeModel({ 
+           model: "gemini-1.5-flash",
+           systemInstruction: `Anda adalah guru ahli yang membuat soal evaluasi berkualitas. Anda HARUS mengembalikan data HANYA dalam format JSON array murni tanpa dibungkus markdown apapun. Format JSON wajib seperti ini:\n[\n  {\n    "question": "Pertanyaan soal disini",\n    "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],\n    "correctIndex": 0,\n    "explanation": "Penjelasan detail dan rasional mengapa opsi tersebut benar."\n  }\n]\nPerhatikan: correctIndex adalah angka index (0-3) dari jawaban yang benar.`,
+           generationConfig: { responseMimeType: "application/json" } // Memaksa format JSON agar terhindar dari Error Parsing
+       });
+
+       // PERBAIKAN: Memasukkan variabel summaryResult agar kuis 100% relevan dengan bacaan
+       const prompt = `Berikut adalah ringkasan materi yang baru saja dipelajari:\n\n"""\n${summaryResult}\n"""\n\nBerdasarkan materi di atas, buatkan kuis pilihan ganda berjumlah persis 5 soal.\nSyarat Mutlak:\n1. Fokus dan sangat relevan dengan isi materi di atas (tidak melenceng ke topik luar).\n2. Uji pemahaman mendalam dan nalar analitis.\n3. JANGAN sekadar menyalin kalimat secara persis dari materi (jangan plek ketiplek/hanya menghafal).\n4. Berstandar pendidikan dan berkualitas tinggi.`;
+
+       const result = await model.generateContent(prompt);
+       let text = result.response.text();
        
+       // Pembersihan JSON yang Anti-Error
        text = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
        const qData = JSON.parse(text);
 
