@@ -13,12 +13,12 @@ import {
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
-  signInWithEmailAndPassword, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
   createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
   signOut,
-  onAuthStateChanged,
-  GoogleAuthProvider,
-  signInWithPopup
+  onAuthStateChanged
 } from 'firebase/auth';
 import { 
   getFirestore, 
@@ -37,6 +37,7 @@ const firebaseConfig = {
   appId: "1:536921420841:web:2922f586fa165fea2f1838"
 };
 
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
@@ -44,6 +45,7 @@ const db = getFirestore(app);
 
 const THEME_KEY = 'telago_theme';
 
+// --- FUNGSI BANTUAN ---
 const formatTime = (seconds) => {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -126,7 +128,7 @@ const Input = ({ label, type = 'text', value, onChange, placeholder, error, icon
 );
 
 // =====================================================================
-// 3. LAYAR AUTENTIKASI
+// 3. LAYAR AUTENTIKASI (LOGIN)
 // =====================================================================
 
 const SplashScreen = ({ onComplete }) => {
@@ -142,11 +144,17 @@ const SplashScreen = ({ onComplete }) => {
       </div>
       <div className="space-y-2 text-center animate-fade-in-up">
         <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight"><span className="text-blue-900 dark:text-blue-400">TELA</span><span className="text-yellow-400">GO</span></h1>
-        <p className="text-yellow-600 dark:text-yellow-500 font-medium uppercase text-xs">Intelligent Focus System</p>
+        <p className="text-yellow-600 dark:text-yellow-500 font-medium uppercase text-xs sm:text-sm tracking-wide">Intelligent Focus System</p>
       </div>
       <div className="mt-12 w-48 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
         <div className="h-full bg-blue-600 dark:bg-blue-500 animate-progress-bar rounded-full"></div>
       </div>
+      <style>{`
+        @keyframes progress-bar { 0% { width: 0%; } 100% { width: 100%; } }
+        .animate-progress-bar { animation: progress-bar 2s ease-in-out forwards; }
+        @keyframes fade-in-up { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in-up { animation: fade-in-up 1s ease-out forwards; }
+      `}</style>
     </div>
   );
 };
@@ -154,11 +162,39 @@ const SplashScreen = ({ onComplete }) => {
 const AuthScreen = ({ onLogin, theme, toggleTheme }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [formData, setFormData] = useState({ name: '', email: '', password: '', confirmPassword: '' });
   const [errors, setErrors] = useState({});
   const [isLoadingAuth, setIsLoadingAuth] = useState(false);
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
-  
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+
+  useEffect(() => {
+    const savedCreds = localStorage.getItem('telago_rememberMe');
+    if (savedCreds) {
+      try {
+        const parsed = JSON.parse(savedCreds);
+        if (parsed.email && parsed.password) {
+          setFormData(prev => ({ ...prev, email: parsed.email, password: parsed.password }));
+          setRememberMe(true);
+        }
+      } catch (e) { console.error(e); }
+    }
+  }, []);
+
+  const validate = () => {
+    let newErrors = {};
+    if (!formData.email.includes('@')) newErrors.email = 'Format email tidak valid';
+    if (formData.password.length < 8) newErrors.password = 'Password minimal 8 karakter';
+    if (!isLogin) {
+      if (!formData.name) newErrors.name = 'Nama wajib diisi';
+      if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Password tidak cocok';
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const createDefaultUserData = (email, name, uid) => ({
     id: uid, uid: uid, name: name || email.split('@')[0], email: email,
     total_focus_time: 0, current_streak: 0, highest_streak: 0, distractions: 0, xp: 0, level: 1, tasks: [], sessions: [], created_at: new Date().toISOString()
@@ -175,26 +211,38 @@ const AuthScreen = ({ onLogin, theme, toggleTheme }) => {
         userData = createDefaultUserData(result.user.email, result.user.displayName, result.user.uid);
         await setDoc(userRef, userData);
       } else { userData = userSnap.data(); }
-      onLogin(userData);
+      
+      setSuccessMessage('Anda telah berhasil login menggunakan Akun Google.');
+      setShowSuccessPopup(true);
+      setTimeout(() => onLogin(userData), 2500);
     } catch (error) { setErrors({ email: `Google Login Gagal: ${error.message}` }); }
     finally { setIsLoadingGoogle(false); }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!validate()) return;
     setIsLoadingAuth(true);
     try {
       if (isLogin) {
         const res = await signInWithEmailAndPassword(auth, formData.email, formData.password);
         const snap = await getDoc(doc(db, 'users', res.user.uid));
-        onLogin(snap.data());
+        
+        if (rememberMe) localStorage.setItem('telago_rememberMe', JSON.stringify({ email: formData.email, password: formData.password }));
+        else localStorage.removeItem('telago_rememberMe');
+
+        setSuccessMessage('Anda telah berhasil masuk ke akun Anda.');
+        setShowSuccessPopup(true);
+        setTimeout(() => onLogin(snap.data()), 2500);
       } else {
         const res = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
         const userData = createDefaultUserData(res.user.email, formData.name, res.user.uid);
         await setDoc(doc(db, 'users', res.user.uid), userData);
         await signOut(auth);
-        alert("Pendaftaran berhasil! Silakan masuk kembali.");
-        setIsLogin(true);
+        
+        setSuccessMessage('Akun berhasil dibuat! Silakan masuk.');
+        setShowSuccessPopup(true);
+        setTimeout(() => { setShowSuccessPopup(false); setIsLogin(true); setFormData({ ...formData, password: '', confirmPassword: '' }); }, 2500);
       }
     } catch (error) { setErrors({ email: 'Terjadi kesalahan login. Cek email/password.' }); } 
     finally { setIsLoadingAuth(false); }
@@ -202,6 +250,17 @@ const AuthScreen = ({ onLogin, theme, toggleTheme }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative">
+      {showSuccessPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm transition-opacity">
+           <div className="bg-white dark:bg-gray-800 p-8 rounded-[24px] shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 border border-green-100 dark:border-green-900/50 animate-pop-in text-center relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-green-400 to-emerald-500"></div>
+              <div className="w-20 h-20 bg-green-100 dark:bg-green-900/40 text-green-500 rounded-full flex items-center justify-center mb-6 animate-scale-check shadow-inner"><CheckCircle size={40} strokeWidth={2.5} /></div>
+              <h3 className="text-2xl font-black text-gray-800 dark:text-white mb-3 tracking-tight">{isLogin ? 'Login Berhasil!' : 'Daftar Berhasil!'}</h3>
+              <p className="text-gray-600 dark:text-gray-300 font-medium leading-relaxed">{successMessage}</p>
+           </div>
+        </div>
+      )}
+
       <button onClick={toggleTheme} className="absolute top-4 right-4 sm:top-6 sm:right-6 p-3 rounded-full bg-white dark:bg-gray-800 shadow-md text-gray-500 dark:text-gray-400 hover:text-blue-600 transition-colors z-20">
         {theme === 'light' ? <Moon size={24}/> : <Sun size={24}/>}
       </button>
@@ -218,26 +277,46 @@ const AuthScreen = ({ onLogin, theme, toggleTheme }) => {
         <form onSubmit={handleSubmit} className="relative z-10">
           {!isLogin && <Input label="Nama Lengkap" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} error={errors.name} />}
           <Input label="Email" type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} error={errors.email} />
-          <Input label="Password" type={showPassword ? 'text' : 'password'} value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} rightElement={<button type="button" onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button>} />
+          <Input label="Password" type={showPassword ? 'text' : 'password'} value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} error={errors.password} rightElement={<button type="button" onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button>} />
+          {!isLogin && <Input label="Konfirmasi Password" type={showPassword ? 'text' : 'password'} value={formData.confirmPassword} onChange={e => setFormData({...formData, confirmPassword: e.target.value})} error={errors.confirmPassword} />}
+
+          {isLogin && (
+            <div className="flex justify-between items-center mb-4 mt-2">
+              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+                <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4" />
+                <span className="font-medium">Ingat Saya</span>
+              </label>
+            </div>
+          )}
           
-          <Button type="submit" disabled={isLoadingAuth} className="w-full mt-4">{isLoadingAuth ? <Loader2 className="animate-spin" /> : (isLogin ? 'Masuk' : 'Daftar Sekarang')}</Button>
+          <Button type="submit" disabled={isLoadingAuth || showSuccessPopup} className="w-full mt-4">{isLoadingAuth ? <Loader2 className="animate-spin" /> : (isLogin ? 'Masuk' : 'Daftar Sekarang')}</Button>
           
           <div className="mt-5 flex items-center justify-between">
             <hr className="w-full border-gray-200 dark:border-gray-700" /><span className="px-3 text-xs text-gray-400 font-medium">ATAU</span><hr className="w-full border-gray-200 dark:border-gray-700" />
           </div>
           
-          <button type="button" onClick={handleGoogleLogin} disabled={isLoadingGoogle} className="w-full mt-5 px-6 py-3 rounded-xl font-semibold border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-center gap-3 active:scale-95 shadow-sm">
-            {isLoadingGoogle ? <Loader2 className="animate-spin" /> : (<><svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>Lanjutkan dengan Google</>)}
+          <button type="button" onClick={handleGoogleLogin} disabled={isLoadingGoogle || showSuccessPopup} className="w-full mt-5 px-6 py-3 rounded-xl font-semibold border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-center gap-3 active:scale-95 shadow-sm">
+            {isLoadingGoogle ? <Loader2 className="animate-spin text-gray-500" /> : (<><svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>Lanjutkan dengan Google</>)}
           </button>
         </form>
         <p className="text-center mt-6 text-sm text-gray-600 dark:text-gray-400 relative z-10 cursor-pointer hover:underline text-blue-600" onClick={() => setIsLogin(!isLogin)}>{isLogin ? "Belum punya akun? Daftar" : "Sudah punya akun? Masuk"}</p>
       </Card>
+
+      <style>{`
+        @keyframes blob { 0% { transform: translate(0px, 0px) scale(1); } 33% { transform: translate(30px, -50px) scale(1.1); } 66% { transform: translate(-20px, 20px) scale(0.9); } 100% { transform: translate(0px, 0px) scale(1); } }
+        .animate-blob { animation: blob 7s infinite; }
+        .animation-delay-2000 { animation-delay: 2s; }
+        @keyframes scale-check { 0% { transform: scale(0) rotate(-45deg); opacity: 0; } 60% { transform: scale(1.2) rotate(10deg); } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }
+        .animate-scale-check { animation: scale-check 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        @keyframes pop-in { 0% { opacity: 0; transform: scale(0.9) translateY(20px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
+        .animate-pop-in { animation: pop-in 0.4s cubic-bezier(0.165, 0.84, 0.44, 1) forwards; }
+      `}</style>
     </div>
   );
 };
 
 // =====================================================================
-// 5. VIEW DASHBOARD & FITUR DEADLINE TUGAS (NEW)
+// 5. VIEW DASHBOARD & FITUR DEADLINE TUGAS (DIKEMBALIKAN SEMPURNA)
 // =====================================================================
 
 const Dashboard = ({ user, changeView, onSync }) => {
@@ -247,12 +326,16 @@ const Dashboard = ({ user, changeView, onSync }) => {
 
   const [tasks, setTasks] = useState(user.tasks || []);
   const [newTask, setNewTask] = useState('');
-  const [newTaskDeadline, setNewTaskDeadline] = useState(''); // STATE BARU: Deadline
+  const [newTaskDeadline, setNewTaskDeadline] = useState(''); 
   const [newTaskHours, setNewTaskHours] = useState('');
   const [newTaskMinutes, setNewTaskMinutes] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDeadline, setEditDeadline] = useState('');
+  const [editHours, setEditHours] = useState('');
+  const [editMinutes, setEditMinutes] = useState('');
+  const [showCustomTime, setShowCustomTime] = useState(false);
+  const [customMinutes, setCustomMinutes] = useState('');
 
   const updateUserTasks = async (newTasks) => {
     setTasks(newTasks);
@@ -288,11 +371,20 @@ const Dashboard = ({ user, changeView, onSync }) => {
     setEditingId(task.id);
     setEditTitle(task.title);
     setEditDeadline(task.deadline || '');
+    setEditHours(task.hours || '');
+    setEditMinutes(task.minutes || '');
   };
 
   const saveEdit = (id) => {
     if (!editTitle.trim()) return;
-    const updatedTasks = tasks.map(t => t.id === id ? { ...t, title: editTitle, deadline: editDeadline } : t);
+    let timeString = '';
+    const h = parseInt(editHours) || 0;
+    const m = parseInt(editMinutes) || 0;
+    if (h > 0 && m > 0) timeString = `${h} Jam ${m} Menit`;
+    else if (h > 0) timeString = `${h} Jam`;
+    else if (m > 0) timeString = `${m} Menit`;
+
+    const updatedTasks = tasks.map(t => t.id === id ? { ...t, title: editTitle, time: timeString, deadline: editDeadline, hours: h, minutes: m } : t);
     updateUserTasks(updatedTasks);
     setEditingId(null);
   };
@@ -326,7 +418,7 @@ const Dashboard = ({ user, changeView, onSync }) => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="col-span-1 lg:col-span-2 p-6 bg-gradient-to-br from-white to-blue-50 dark:from-gray-800 dark:to-gray-800/80">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="font-bold text-gray-800 dark:text-white text-lg flex items-center gap-2"><Play size={20} className="text-blue-600"/> Mulai Fokus</h3>
+            <h3 className="font-bold text-gray-800 dark:text-white text-lg flex items-center gap-2"><Play size={20} className="text-blue-600 dark:text-blue-400"/> Mulai Fokus</h3>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <button onClick={() => changeView('timer', { id: Date.now(), mode: 'pomodoro', minutes: 25 })} className="p-4 sm:p-6 rounded-xl border-2 border-dashed border-blue-200 dark:border-blue-800 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all text-center group">
@@ -340,12 +432,37 @@ const Dashboard = ({ user, changeView, onSync }) => {
               <p className="text-xs text-gray-500 mt-1">60 Menit Non-stop</p>
             </button>
           </div>
+          
+          <div className="flex flex-col sm:flex-row gap-3 mt-4">
+            <button onClick={() => changeView('timer', { id: Date.now(), mode: 'flexible', minutes: 0 })} className="flex-1 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-semibold hover:border-blue-500 hover:text-blue-600 shadow-sm transition-colors flex items-center justify-center gap-2">
+               <Play size={18}/> Mode Bebas
+            </button>
+            <button onClick={() => setShowCustomTime(!showCustomTime)} className={`flex-1 p-3 rounded-xl font-semibold shadow-sm transition-colors flex items-center justify-center gap-2 ${showCustomTime ? 'border border-blue-500 text-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:border-blue-500 hover:text-blue-600'}`}>
+               <Settings size={18}/> Custom Waktu
+            </button>
+          </div>
+
+          {showCustomTime && (
+            <div className="mt-4 p-5 bg-white dark:bg-gray-800 border border-blue-100 dark:border-gray-700 shadow-inner rounded-xl animate-fade-in-up">
+              <label className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-3 block uppercase tracking-wider">Tentukan Waktu Fokusmu</label>
+              <div className="flex gap-3 items-center">
+                 <div className="relative flex-1">
+                    <input type="number" min="1" placeholder="Contoh: 45" value={customMinutes} onChange={e => setCustomMinutes(e.target.value)} className="w-full pl-11 pr-16 py-3 rounded-lg border border-gray-200 dark:border-gray-600 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:border-blue-500 dark:bg-gray-700 dark:text-white outline-none transition-all text-lg font-semibold text-gray-800" />
+                    <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20}/>
+                    <span className="absolute right-4 top-1/2 transform -translate-y-1/2 text-sm text-gray-400 font-bold">Menit</span>
+                 </div>
+                 <Button onClick={() => { if(customMinutes && parseInt(customMinutes) > 0) { changeView('timer', { id: Date.now(), mode: 'custom', minutes: parseInt(customMinutes) }) } }} disabled={!customMinutes || parseInt(customMinutes) <= 0} className="py-3 px-6 h-auto whitespace-nowrap shadow-md">
+                   Mulai Timer
+                 </Button>
+              </div>
+            </div>
+          )}
         </Card>
 
         <Card className="p-6 flex flex-col justify-between">
           <div>
             <div className="flex justify-between items-center mb-2"><h3 className="font-bold text-gray-800 dark:text-white">Progress Level</h3><Award className="text-yellow-500" size={24}/></div>
-            <p className="text-sm text-gray-500 mb-6">{xpNeeded - (user.xp || 0)} XP lagi menuju Level {level + 1}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{xpNeeded - (user.xp || 0)} XP lagi menuju Level {level + 1}</p>
           </div>
           <div>
             <div className="h-4 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden mb-2"><div className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-full transition-all duration-1000" style={{ width: `${progress}%` }}></div></div>
@@ -354,16 +471,30 @@ const Dashboard = ({ user, changeView, onSync }) => {
         </Card>
       </div>
 
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Fokus', value: `${Math.round((user.total_focus_time || 0) / 60)} mnt`, icon: Clock, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/30' },
+          { label: 'Sesi Selesai', value: (user.sessions || []).length, icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-900/30' },
+          { label: 'Highest Streak', value: `${user.highest_streak || 0}h`, icon: Flame, color: 'text-red-500', bg: 'bg-red-50 dark:bg-red-900/30' },
+          { label: 'Fokus Score', value: `${Math.max(0, 100 - (user.distractions || 0) * 5)}`, icon: Shield, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/30' },
+        ].map((stat, i) => (
+          <Card key={i} className="p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className={`p-3 rounded-full ${stat.bg} ${stat.color}`}><stat.icon size={20}/></div>
+            <div><p className="text-xs text-gray-500 font-medium">{stat.label}</p><p className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-gray-100">{stat.value}</p></div>
+          </Card>
+        ))}
+      </div>
+
       <Card className="p-6">
         <h3 className="font-bold text-gray-800 dark:text-white text-lg flex items-center gap-2 mb-6"><CheckCircle className="text-blue-500" size={20}/> Tugas Harian & Deadline</h3>
         
         <form onSubmit={handleAddTask} className="flex flex-col sm:flex-row gap-3 mb-6 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
-          <input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} placeholder="Tugas baru..." className="flex-1 px-4 py-2 rounded-xl border focus:border-blue-500 outline-none dark:bg-gray-700 dark:border-gray-600"/>
+          <input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} placeholder="Tugas baru..." className="flex-1 px-4 py-2 rounded-xl border focus:border-blue-500 outline-none dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
           
           <div className="flex items-center gap-2">
             <input type="date" value={newTaskDeadline} onChange={(e) => setNewTaskDeadline(e.target.value)} className="px-3 py-2 rounded-xl border focus:border-blue-500 outline-none text-sm dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300"/>
-            <input type="number" min="0" placeholder="Jam" value={newTaskHours} onChange={(e) => setNewTaskHours(e.target.value)} className="w-16 px-3 py-2 rounded-xl border focus:border-blue-500 outline-none text-center dark:bg-gray-700 dark:border-gray-600"/>
-            <input type="number" min="0" max="59" placeholder="Mnt" value={newTaskMinutes} onChange={(e) => setNewTaskMinutes(e.target.value)} className="w-16 px-3 py-2 rounded-xl border focus:border-blue-500 outline-none text-center dark:bg-gray-700 dark:border-gray-600"/>
+            <input type="number" min="0" placeholder="Jam" value={newTaskHours} onChange={(e) => setNewTaskHours(e.target.value)} className="w-16 px-3 py-2 rounded-xl border focus:border-blue-500 outline-none text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
+            <input type="number" min="0" max="59" placeholder="Mnt" value={newTaskMinutes} onChange={(e) => setNewTaskMinutes(e.target.value)} className="w-16 px-3 py-2 rounded-xl border focus:border-blue-500 outline-none text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"/>
             <Button type="submit" className="px-4 py-2 h-full"><Plus size={20} /></Button>
           </div>
         </form>
@@ -373,17 +504,26 @@ const Dashboard = ({ user, changeView, onSync }) => {
             <p className="text-center text-gray-500 py-4 text-sm">Belum ada tugas. Tambahkan tugas pertamamu hari ini!</p>
           ) : (
             tasks.map(task => (
-              <div key={task.id} className={`flex items-center justify-between p-3 rounded-xl border transition-all ${task.completed ? 'bg-gray-50 dark:bg-gray-800/50 opacity-70' : 'bg-white dark:bg-gray-800 hover:border-blue-300'}`}>
+              <div key={task.id} className={`flex items-center justify-between p-3 rounded-xl border transition-all ${task.completed ? 'bg-gray-50 dark:bg-gray-800/50 opacity-70' : 'bg-white dark:bg-gray-800 hover:border-blue-300 dark:border-gray-700'}`}>
                 {editingId === task.id ? (
-                  <div className="flex items-center gap-3 flex-1">
-                    <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="flex-1 px-3 py-1.5 rounded-lg border dark:bg-gray-700 outline-none" autoFocus/>
-                    <input type="date" value={editDeadline} onChange={(e) => setEditDeadline(e.target.value)} className="px-2 py-1.5 rounded-lg border dark:bg-gray-700 outline-none text-sm text-gray-600"/>
-                    <button onClick={() => saveEdit(task.id)} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"><Check size={18}/></button>
+                  <div className="flex items-center gap-3 flex-1 w-full flex-wrap sm:flex-nowrap">
+                    <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="flex-1 px-3 py-1.5 rounded-lg border dark:bg-gray-700 outline-none dark:text-white" autoFocus/>
+                    <div className="flex items-center gap-1">
+                      <input type="date" value={editDeadline} onChange={(e) => setEditDeadline(e.target.value)} className="px-2 py-1.5 rounded-lg border dark:bg-gray-700 outline-none text-sm text-gray-600 dark:text-gray-300"/>
+                      <input type="number" min="0" placeholder="0" value={editHours} onChange={(e) => setEditHours(e.target.value)} className="w-14 px-2 py-1.5 rounded-lg border dark:bg-gray-700 text-sm text-center outline-none dark:text-white" />
+                      <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Jam</span>
+                      <input type="number" min="0" max="59" placeholder="0" value={editMinutes} onChange={(e) => setEditMinutes(e.target.value)} className="w-14 px-2 py-1.5 rounded-lg border dark:bg-gray-700 text-sm text-center outline-none dark:text-white" />
+                      <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Mnt</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => saveEdit(task.id)} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"><Check size={18}/></button>
+                      <button onClick={() => setEditingId(null)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><X size={18}/></button>
+                    </div>
                   </div>
                 ) : (
                   <>
                     <div className="flex items-center gap-3 flex-1 overflow-hidden cursor-pointer" onClick={() => toggleTask(task.id)}>
-                      <div className={`flex-shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center ${task.completed ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-300 text-transparent'}`}><Check size={14} strokeWidth={3} /></div>
+                      <div className={`flex-shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center ${task.completed ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-300 text-transparent dark:border-gray-500'}`}><Check size={14} strokeWidth={3} /></div>
                       <div className="flex flex-col flex-1">
                         <span className={`text-sm sm:text-base font-medium ${task.completed ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-200'}`}>{task.title}</span>
                         <div className="flex gap-3 items-center mt-1">
@@ -408,7 +548,7 @@ const Dashboard = ({ user, changeView, onSync }) => {
 };
 
 // =====================================================================
-// 6. VIEW TIMER & 7. VIEW ANALISIS (DIKEMBALIKAN UTUH 100%)
+// 6. VIEW TIMER (DENGAN DISTRAKSI DAN STATUS)
 // =====================================================================
 
 const TimerView = ({ config, user, onFinish, onCancel, onSync }) => {
@@ -420,6 +560,20 @@ const TimerView = ({ config, user, onFinish, onCancel, onSync }) => {
   const sessionTimeRef = useRef(0);
 
   useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && isActive && !isPaused) {
+        setDistractions(prev => prev + 1);
+        if (config.mode === 'deep') {
+          setIsPaused(true); 
+          alert("Peringatan: Kamu meninggalkan halaman saat mode Deep Work. Timer dijeda.");
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [isActive, isPaused, config.mode]);
+
+  useEffect(() => {
     let interval = null;
     if (isActive && !isPaused) {
       interval = setInterval(() => {
@@ -427,7 +581,7 @@ const TimerView = ({ config, user, onFinish, onCancel, onSync }) => {
           sessionTimeRef.current += 1;
           if (config.minutes > 0 && prev <= 1) {
             clearInterval(interval);
-            setIsActive(false); setIsPaused(false); setShowEnergyModal(true);
+            handleStop();
             return 0;
           }
           return config.minutes > 0 ? prev - 1 : prev + 1;
@@ -437,22 +591,70 @@ const TimerView = ({ config, user, onFinish, onCancel, onSync }) => {
     return () => clearInterval(interval);
   }, [isActive, isPaused, config.minutes]);
 
+  const toggleTimer = () => {
+    if (!isActive) setIsActive(true);
+    else setIsPaused(!isPaused);
+  };
+
+  const handleStop = () => {
+    setIsActive(false); setIsPaused(false);
+    if (sessionTimeRef.current >= 60 || config.minutes === 0) setShowEnergyModal(true);
+    else { alert("Sesi dibatalkan. Fokus minimal 1 menit diperlukan untuk mendapatkan XP."); onCancel(); }
+  };
+
   const saveSession = async (energyLevel) => {
     const duration = sessionTimeRef.current;
     let focusScore = Math.max(0, 100 - (distractions * 10));
     const xpGained = Math.floor((Math.max(1, Math.floor(duration/60)) * 5) * (focusScore/100) * (config.mode === 'deep' ? 1.5 : 1));
-    const updatedUser = { ...user, total_focus_time: (user.total_focus_time || 0) + duration, xp: (user.xp || 0) + xpGained };
+    
+    const newSession = {
+      id: 'sess_' + Date.now(),
+      date: new Date().toISOString(),
+      duration: duration,
+      distractions: distractions,
+      focus_score: focusScore,
+      mode: config.mode,
+      energy_level: energyLevel
+    };
+
+    const updatedSessions = [...(user.sessions || []), newSession];
+    const today = new Date().toDateString();
+    let newStreak = user.current_streak || 0;
+    let highestStreak = user.highest_streak || 0;
+
+    if (user.last_study_date !== today) {
+        newStreak += 1;
+        if (newStreak > highestStreak) highestStreak = newStreak;
+    }
+
+    const newLevel = calculateLevel((user.xp || 0) + xpGained);
+    const updatedUser = {
+       ...user,
+       sessions: updatedSessions,
+       total_focus_time: (user.total_focus_time || 0) + duration,
+       xp: (user.xp || 0) + xpGained,
+       distractions: (user.distractions || 0) + distractions,
+       current_streak: newStreak,
+       highest_streak: highestStreak,
+       last_study_date: today,
+       level: newLevel
+    };
+
     try { await updateDoc(doc(db, 'users', user.uid), updatedUser); onSync(updatedUser); onFinish(xpGained); } catch(err) { console.error(err); }
   };
+
+  const totalSeconds = config.minutes > 0 ? config.minutes * 60 : sessionTimeRef.current || 1;
+  const currentSeconds = config.minutes > 0 ? time : sessionTimeRef.current;
+  const progressPercent = config.minutes > 0 ? ((totalSeconds - currentSeconds) / totalSeconds) * 100 : 100;
 
   if (showEnergyModal) return (
     <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <Card className="w-full max-w-sm p-6 text-center animate-fade-in-up">
-        <h3 className="text-xl font-bold mb-2">Sesi Selesai! 🎉</h3>
-        <p className="mb-6">Bagaimana energimu?</p>
+        <h3 className="text-xl font-bold mb-2 dark:text-white">Sesi Selesai! 🎉</h3>
+        <p className="mb-6 text-gray-500 dark:text-gray-400">Bagaimana energimu?</p>
         <div className="grid grid-cols-3 gap-3">
           {['Rendah', 'Stabil', 'Tinggi'].map((lvl, i) => (
-            <button key={i} onClick={() => saveSession(lvl)} className="p-3 border rounded-xl hover:bg-blue-50 dark:hover:bg-gray-700 flex flex-col items-center">{i===0?'🔋':i===1?'⚡':'🔥'} <span>{lvl}</span></button>
+            <button key={i} onClick={() => saveSession(lvl)} className="p-3 border rounded-xl hover:bg-blue-50 dark:hover:bg-gray-700 flex flex-col items-center dark:border-gray-600 dark:text-white">{i===0?'🔋':i===1?'⚡':'🔥'} <span>{lvl}</span></button>
           ))}
         </div>
       </Card>
@@ -461,27 +663,291 @@ const TimerView = ({ config, user, onFinish, onCancel, onSync }) => {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] animate-fade-in-up">
-      <div className="text-7xl sm:text-9xl font-black text-blue-900 dark:text-blue-400 mb-12 font-mono">{formatTime(time)}</div>
-      <div className="flex gap-6">
-        <button onClick={() => { setIsActive(false); onCancel(); }} className="w-16 h-16 bg-gray-100 text-gray-600 rounded-full flex items-center justify-center hover:text-red-500"><Square size={24}/></button>
-        <button onClick={() => { if(!isActive)setIsActive(true); else setIsPaused(!isPaused); }} className="w-24 h-24 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-xl">
-          {isActive && !isPaused ? <Pause size={36}/> : <Play size={36} className="ml-2"/>}
+      <div className="relative w-64 h-64 sm:w-80 sm:h-80 mb-8 sm:mb-12">
+        <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="3" className="text-blue-50 dark:text-gray-800" />
+          <circle cx="50" cy="50" r="45" fill="none" stroke={isPaused ? '#FBBF24' : '#3B82F6'} strokeWidth="4" strokeLinecap="round" strokeDasharray="283" strokeDashoffset={283 - (283 * progressPercent) / 100} className="transition-all duration-1000 ease-linear drop-shadow-md" />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-5xl sm:text-7xl font-black text-blue-900 dark:text-blue-400 font-mono tracking-tighter">{formatTime(time)}</span>
+          <span className="text-xs sm:text-sm font-medium text-gray-400 dark:text-gray-500 mt-2 uppercase tracking-widest">{config.mode === 'deep' ? 'Deep Work' : config.mode === 'custom' ? 'Custom Time' : config.mode === 'flexible' ? 'Flexible' : 'Pomodoro'}</span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-6 mb-8 sm:mb-12">
+        <button onClick={handleStop} className="w-14 h-14 sm:w-16 sm:h-16 bg-gray-100 text-gray-600 rounded-full flex items-center justify-center hover:text-red-500 dark:bg-gray-800 dark:text-gray-400 border dark:border-gray-700 shadow-sm"><Square size={24} fill="currentColor"/></button>
+        <button onClick={toggleTimer} className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center shadow-xl transition-all transform hover:scale-105 ${isActive && !isPaused ? 'bg-yellow-400 text-blue-900' : 'bg-blue-600 text-white'}`}>
+          {isActive && !isPaused ? <Pause size={36} fill="currentColor"/> : <Play size={36} fill="currentColor" className="ml-2"/>}
         </button>
+      </div>
+
+      <div className="flex gap-4 w-full max-w-sm px-4">
+        <Card className="flex-1 p-3 text-center bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm border-blue-50/50 dark:border-gray-700/50">
+          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1 flex justify-center items-center gap-1"><Shield size={14}/> Distraksi</div>
+          <div className={`text-xl sm:text-2xl font-bold ${distractions > 0 ? 'text-red-500 dark:text-red-400' : 'text-green-500 dark:text-green-400'}`}>{distractions}</div>
+        </Card>
+        <Card className="flex-1 p-3 text-center bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm border-blue-50/50 dark:border-gray-700/50">
+          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1 flex justify-center items-center gap-1"><Info size={14}/> Status</div>
+          <div className="text-sm sm:text-base font-bold text-blue-900 dark:text-blue-400 mt-1">{isActive ? (isPaused ? 'Dijeda' : 'Fokus Aktif') : 'Menunggu'}</div>
+        </Card>
       </div>
     </div>
   );
 };
 
+// =====================================================================
+// 7. VIEW ANALISIS (DIKEMBALIKAN SEMPURNA - Grafik, Heatmap, dll)
+// =====================================================================
+
 const AnalyticsView = ({ user }) => {
+  const [timeframe, setTimeframe] = useState('minggu'); 
+  const dbSessions = user.sessions || []; 
+  
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  let filteredSessions = [];
+  let timeframeLabel = "";
+  
+  if (timeframe === 'hari') {
+    filteredSessions = dbSessions.filter(s => new Date(s.date) >= startOfToday);
+    timeframeLabel = now.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
+  } else if (timeframe === 'minggu') {
+    const lastWeek = new Date(startOfToday);
+    lastWeek.setDate(lastWeek.getDate() - 6);
+    filteredSessions = dbSessions.filter(s => new Date(s.date) >= lastWeek);
+    timeframeLabel = `${lastWeek.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short'})} - ${now.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short'})}`;
+  } else if (timeframe === 'bulan') {
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    filteredSessions = dbSessions.filter(s => new Date(s.date) >= startOfMonth);
+    timeframeLabel = now.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+  }
+
+  const totalSeconds = filteredSessions.reduce((acc, curr) => acc + curr.duration, 0);
+  const totalDistractions = filteredSessions.reduce((acc, curr) => acc + curr.distractions, 0);
+  
+  let avgLabel = "Waktu rata-rata";
+  let avgValueStr = "00:00:00";
+  
+  if (timeframe === 'hari') {
+    avgLabel = "Konsentrasi max";
+    const maxFocus = filteredSessions.reduce((max, s) => s.duration > max ? s.duration : max, 0);
+    avgValueStr = formatTimeHMDetailed(maxFocus);
+  } else if (timeframe === 'minggu') {
+    avgValueStr = formatTimeHMDetailed(Math.floor(totalSeconds / 7));
+  } else {
+    avgValueStr = formatTimeHMDetailed(Math.floor(totalSeconds / now.getDate()));
+  }
+
+  const istirahatSeconds = filteredSessions.length * (5 * 60); 
+  const targetTotal = timeframe === 'hari' ? 86400 : (timeframe === 'minggu' ? 86400 * 7 : 86400 * now.getDate());
+  const otherSeconds = Math.max(targetTotal - totalSeconds - istirahatSeconds, 0);
+  
+  const pBelajar = totalSeconds > 0 ? (totalSeconds / targetTotal) * 100 : 0;
+  const pIstirahat = istirahatSeconds > 0 ? (istirahatSeconds / targetTotal) * 100 : 0;
+  const donutDasharray = `${pBelajar} ${100 - pBelajar}`;
+
+  let chartData = [];
+  if (timeframe === 'minggu') {
+    const last7Days = Array.from({length: 7}, (_, i) => {
+      const d = new Date(now);
+      d.setDate(d.getDate() - (6 - i));
+      return d.toLocaleDateString('id-ID', { weekday: 'short' });
+    });
+    chartData = last7Days.map(dayStr => {
+      const daySecs = dbSessions
+         .filter(s => new Date(s.date).toLocaleDateString('id-ID', { weekday: 'short' }) === dayStr && new Date(s.date) >= new Date(now.getTime() - 7*24*60*60*1000))
+         .reduce((acc, curr) => acc + curr.duration, 0);
+      return { label: dayStr, value: Math.round(daySecs / 60) };
+    });
+  } else if (timeframe === 'bulan') {
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    chartData = Array.from({length: daysInMonth}, (_, i) => {
+      const day = i + 1;
+      const daySecs = dbSessions
+         .filter(s => new Date(s.date).getDate() === day && new Date(s.date).getMonth() === now.getMonth())
+         .reduce((acc, curr) => acc + curr.duration, 0);
+      return { label: `${day}`, value: Math.round(daySecs / 60) };
+    });
+  } else {
+    chartData = Array.from({length: 6}, (_, i) => {
+      const hourBlock = i * 4;
+      const hourSecs = filteredSessions
+         .filter(s => new Date(s.date).getHours() >= hourBlock && new Date(s.date).getHours() < hourBlock + 4)
+         .reduce((acc, curr) => acc + curr.duration, 0);
+      return { label: `${hourBlock}:00`, value: Math.round(hourSecs / 60) };
+    });
+  }
+  
+  const maxChartVal = Math.max(...chartData.map(d => d.value), 10); 
+
+  const scatterPoints = filteredSessions.map(s => {
+    const d = new Date(s.date);
+    const hourFloat = d.getHours() + (d.getMinutes() / 60);
+    const endFloat = hourFloat + (s.duration / 3600);
+    return { begin: hourFloat, end: endFloat > 24 ? 24 : endFloat };
+  });
+
   return (
-    <div className="space-y-6 animate-fade-in-up max-w-4xl mx-auto text-center pt-20">
-       <BarChart size={64} className="mx-auto text-blue-300 dark:text-blue-800 mb-4"/>
-       <h2 className="text-3xl font-black text-gray-800 dark:text-white">Analisis Data (Visualisasi)</h2>
-       <p className="text-gray-500 dark:text-gray-400">Total Waktu Belajarmu: <b className="text-blue-600">{formatTimeHMDetailed(user.total_focus_time || 0)}</b></p>
-       <div className="grid grid-cols-2 gap-4 mt-8">
-          <Card className="p-6"><h3 className="font-bold">Total Sesi</h3><p className="text-4xl text-blue-500">{(user.sessions||[]).length}</p></Card>
-          <Card className="p-6"><h3 className="font-bold">Total Distraksi</h3><p className="text-4xl text-red-500">{user.distractions||0}</p></Card>
-       </div>
+    <div className="space-y-6 animate-fade-in-up max-w-4xl mx-auto">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Analisis Performa</h2>
+      </div>
+
+      <div className="flex border-b border-gray-200 dark:border-gray-700">
+        {['hari', 'minggu', 'bulan'].map(t => (
+          <button key={t} onClick={() => setTimeframe(t)} className={`flex-1 py-3 text-sm font-semibold capitalize transition-all border-b-2 ${timeframe === t ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div className="text-center text-sm font-medium text-gray-500 dark:text-gray-400 py-2">
+        {timeframeLabel}
+      </div>
+
+      <Card className="flex flex-col sm:flex-row justify-around p-6 bg-white dark:bg-gray-800 gap-4 sm:gap-0">
+        <div className="text-center flex-1 border-b sm:border-b-0 sm:border-r border-gray-100 dark:border-gray-700 pb-4 sm:pb-0">
+          <p className="text-xs text-blue-500 dark:text-blue-400 mb-1">Total waktu belajar</p>
+          <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{formatTimeHMDetailed(totalSeconds)}</p>
+        </div>
+        <div className="text-center flex-1 border-b sm:border-b-0 sm:border-r border-gray-100 dark:border-gray-700 pb-4 sm:pb-0">
+          <p className="text-xs text-blue-500 dark:text-blue-400 mb-1">{avgLabel}</p>
+          <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{avgValueStr}</p>
+        </div>
+        <div className="text-center flex-1">
+          <p className="text-xs text-red-500 dark:text-red-400 mb-1">Total Distraksi</p>
+          <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{totalDistractions}</p>
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 gap-6">
+        <Card className="p-6 overflow-hidden">
+           <div className="h-56 flex items-end justify-between gap-1 sm:gap-2 relative pt-8 border-b border-gray-200 dark:border-gray-700">
+             <svg viewBox="0 0 100 100" className="absolute top-0 left-0 w-full h-full pointer-events-none z-10" preserveAspectRatio="none">
+               <polyline fill="none" stroke="currentColor" strokeWidth="0.5" className="text-gray-400 dark:text-gray-500 drop-shadow-md opacity-60" vectorEffect="non-scaling-stroke" points={chartData.map((d, i) => {
+                    const x = (i / Math.max(chartData.length - 1, 1)) * 100;
+                    const y = 100 - (((d.value + maxChartVal*0.2) / (maxChartVal * 1.5)) * 100); 
+                    return `${x},${y}`;
+                  }).join(' ')} />
+               {chartData.map((d, i) => {
+                 const x = (i / Math.max(chartData.length - 1, 1)) * 100;
+                 const y = 100 - (((d.value + maxChartVal*0.2) / (maxChartVal * 1.5)) * 100); 
+                 return <circle key={i} cx={x} cy={y} r="1" fill="currentColor" className="text-gray-500 dark:text-gray-400" vectorEffect="non-scaling-stroke" />
+               })}
+             </svg>
+             
+             {chartData.map((val, i) => (
+               <div key={i} className="flex flex-col items-center w-full group z-20 h-full justify-end">
+                 <div className="relative w-full flex justify-center h-full items-end">
+                   <div className="absolute -top-8 bg-gray-800 dark:bg-gray-100 text-white dark:text-gray-900 text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30 shadow-lg">
+                     {val.value} mnt
+                   </div>
+                   <div className="w-full max-w-[40px] bg-[#0ea5e9] dark:bg-blue-500 group-hover:bg-blue-600 dark:group-hover:bg-blue-400 rounded-t-sm transition-all duration-500" style={{ height: `${(val.value / maxChartVal) * 90}%`, minHeight: val.value > 0 ? '4px' : '0' }}></div>
+                 </div>
+                 <span className="text-[9px] sm:text-xs text-gray-500 dark:text-gray-400 mt-2 text-center overflow-hidden text-ellipsis w-full">{val.label}</span>
+               </div>
+             ))}
+           </div>
+        </Card>
+
+        <Card className="p-6 flex flex-col md:flex-row items-center justify-around gap-8">
+           <div className="relative w-40 h-40">
+              <svg viewBox="0 0 42 42" className="w-full h-full transform -rotate-90">
+                <circle cx="21" cy="21" r="15.9154" fill="transparent" stroke="currentColor" strokeWidth="8" className="text-gray-300 dark:text-gray-600" />
+                <circle cx="21" cy="21" r="15.9154" fill="transparent" stroke="#8b5cf6" strokeWidth="8" strokeDasharray={`${pIstirahat + pBelajar} ${100 - (pIstirahat + pBelajar)}`} strokeDashoffset="0" className="transition-all duration-1000 ease-out" />
+                <circle cx="21" cy="21" r="15.9154" fill="transparent" stroke="#0ea5e9" strokeWidth="8" strokeDasharray={donutDasharray} strokeDashoffset="0" className="transition-all duration-1000 ease-out" />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center flex-col">
+                <span className="text-lg font-bold text-gray-800 dark:text-white">{Math.round(pBelajar)}%</span>
+              </div>
+           </div>
+
+           <div className="flex flex-col gap-3 min-w-[200px]">
+              <div className="flex justify-between items-center text-sm">
+                <div className="flex items-center gap-2"><span className="w-3 h-3 bg-[#0ea5e9] rounded-sm"></span> <span className="dark:text-gray-300">Belajar</span></div>
+                <span className="font-semibold text-gray-700 dark:text-gray-300">{formatTimeHMDetailed(totalSeconds)}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <div className="flex items-center gap-2"><span className="w-3 h-3 bg-[#8b5cf6] rounded-sm"></span> <span className="dark:text-gray-300">Istirahat</span></div>
+                <span className="font-semibold text-gray-700 dark:text-gray-300">{formatTimeHMDetailed(istirahatSeconds)}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <div className="flex items-center gap-2"><span className="w-3 h-3 bg-gray-300 dark:bg-gray-600 rounded-sm"></span> <span className="dark:text-gray-300">Other</span></div>
+                <span className="font-semibold text-gray-700 dark:text-gray-300">{formatTimeHMDetailed(otherSeconds)}</span>
+              </div>
+           </div>
+        </Card>
+        
+        <Card className="p-6">
+           <h3 className="font-bold text-gray-800 dark:text-white mb-6 text-center text-sm">Distribusi Waktu ({now.getFullYear()})</h3>
+           <div className="relative h-48 border-l border-b border-gray-300 dark:border-gray-600 ml-8 mb-4">
+              <div className="absolute -left-8 top-0 text-xs text-gray-400">00:00</div>
+              <div className="absolute -left-8 top-[50%] text-xs text-gray-400">12:00</div>
+              <div className="absolute -left-8 bottom-0 text-xs text-gray-400">24:00</div>
+              
+              <div className="absolute left-[30%] top-0 bottom-0 border-l border-dashed border-gray-200 dark:border-gray-700"></div>
+              <div className="absolute left-[70%] top-0 bottom-0 border-l border-dashed border-gray-200 dark:border-gray-700"></div>
+              
+              {scatterPoints.map((pt, i) => (
+                <React.Fragment key={i}>
+                  <div className="absolute w-3 h-3 bg-[#0ea5e9] rounded-full opacity-60 transform -translate-x-1/2 -translate-y-1/2 hover:scale-150 transition-transform" style={{ left: `${30 + (Math.random()*10 - 5)}%`, top: `${(pt.begin / 24) * 100}%` }}></div>
+                  <div className="absolute w-3 h-3 bg-gray-400 dark:bg-gray-500 rounded-full opacity-60 transform -translate-x-1/2 -translate-y-1/2 hover:scale-150 transition-transform" style={{ left: `${70 + (Math.random()*10 - 5)}%`, top: `${(pt.end / 24) * 100}%` }}></div>
+                </React.Fragment>
+              ))}
+           </div>
+           <div className="flex justify-between px-10 text-xs text-gray-500 dark:text-gray-400 font-medium">
+             <span>Begin (avg)</span>
+             <span>End (avg)</span>
+           </div>
+        </Card>
+
+        {/* Heatmap Kalender Khusus Bulan */}
+        {timeframe === 'bulan' && (
+          <Card className="p-6">
+            <h3 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+               <CalendarDays size={18} className="text-blue-500"/> Riwayat Fokus Bulan Ini
+            </h3>
+            <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-4">
+               {['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(d => (
+                 <div key={d} className="text-center text-[10px] sm:text-xs font-semibold text-gray-400 dark:text-gray-500">{d}</div>
+               ))}
+               {Array.from({length: new Date(now.getFullYear(), now.getMonth(), 1).getDay() === 0 ? 6 : new Date(now.getFullYear(), now.getMonth(), 1).getDay() - 1 }).map((_, i) => (
+                 <div key={`empty-${i}`} className="p-2"></div>
+               ))}
+               {chartData.map((d, i) => {
+                 const intensity = d.value === 0 ? 0 : Math.ceil((d.value / Math.max(maxChartVal, 1)) * 4);
+                 const bgClass = [
+                   'bg-gray-100 dark:bg-gray-800 text-gray-400', 
+                   'bg-blue-200 dark:bg-blue-900/40 text-blue-900 dark:text-blue-200', 
+                   'bg-blue-300 dark:bg-blue-800/60 text-blue-900 dark:text-blue-100', 
+                   'bg-blue-500 dark:bg-blue-600 text-white', 
+                   'bg-blue-700 dark:bg-blue-500 text-white font-bold'  
+                 ][intensity > 4 ? 4 : intensity];
+
+                 return (
+                   <div key={i} className={`aspect-square flex items-center justify-center rounded-md sm:rounded-lg text-xs sm:text-sm cursor-pointer transition-transform hover:scale-110 ${bgClass} relative group`}>
+                      {d.label}
+                      <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10 shadow-md">
+                        {d.value} Menit
+                      </div>
+                   </div>
+                 );
+               })}
+            </div>
+            
+            <div className="flex items-center justify-end gap-2 text-xs text-gray-500 dark:text-gray-400 mt-2">
+              <span>Kurang</span>
+              <div className="w-3 h-3 rounded-sm bg-gray-100 dark:bg-gray-800"></div>
+              <div className="w-3 h-3 rounded-sm bg-blue-200 dark:bg-blue-900/40"></div>
+              <div className="w-3 h-3 rounded-sm bg-blue-300 dark:bg-blue-800/60"></div>
+              <div className="w-3 h-3 rounded-sm bg-blue-500 dark:bg-blue-600"></div>
+              <div className="w-3 h-3 rounded-sm bg-blue-700 dark:bg-blue-500"></div>
+              <span>Maksimal</span>
+            </div>
+          </Card>
+        )}
+      </div>
     </div>
   );
 };
@@ -505,9 +971,9 @@ const get3DIframe = (type) => {
         sceneCode = `const g=new THREE.Group();scene.add(g);const l=new THREE.PointLight(0xffffff,1,100);l.position.set(10,10,10);scene.add(l);scene.add(new THREE.AmbientLight(0x404040));const o=new THREE.Mesh(new THREE.SphereGeometry(0.8,32,32),new THREE.MeshPhongMaterial({color:0xef4444}));g.add(o);const mh=new THREE.MeshPhongMaterial({color:0xffffff});const h1=new THREE.Mesh(new THREE.SphereGeometry(0.4,32,32),mh);h1.position.set(1.1,-0.7,0);g.add(h1);const h2=new THREE.Mesh(new THREE.SphereGeometry(0.4,32,32),mh);h2.position.set(-1.1,-0.7,0);g.add(h2);const ms=new THREE.MeshPhongMaterial({color:0x94a3b8});const s1=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,1.5,8),ms);s1.position.set(0.55,-0.35,0);s1.rotation.z=-Math.PI/3.5;g.add(s1);const s2=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,1.5,8),ms);s2.position.set(-0.55,-0.35,0);s2.rotation.z=Math.PI/3.5;g.add(s2);function updateScene(){g.rotation.x+=0.01;g.rotation.y+=0.015;}`;
     } else if (type === 'earth') {
         sceneCode = `const g=new THREE.Group();scene.add(g);const l=new THREE.DirectionalLight(0xffffff,1);l.position.set(5,3,5);scene.add(l);scene.add(new THREE.AmbientLight(0x222222));const e=new THREE.Mesh(new THREE.SphereGeometry(2,64,64),new THREE.MeshPhongMaterial({color:0x0ea5e9}));g.add(e);for(let i=0;i<20;i++){const land=new THREE.Mesh(new THREE.SphereGeometry(0.4+Math.random()*0.6,7,7),new THREE.MeshPhongMaterial({color:0x22c55e,flatShading:true}));const p=Math.acos(-1+(2*i)/20);const t=Math.sqrt(20*Math.PI)*p;land.position.setFromSphericalCoords(2,p,t);land.lookAt(0,0,0);land.scale.z=0.2;e.add(land);}const c=new THREE.Mesh(new THREE.SphereGeometry(2.1,32,32),new THREE.MeshPhongMaterial({color:0xffffff,transparent:true,opacity:0.3,wireframe:true}));g.add(c);function updateScene(){e.rotation.y+=0.005;c.rotation.y+=0.007;c.rotation.x+=0.002;}`;
-    } else if (type === 'cell') { // NEW 3D ANIMATION: Biologi Sel
+    } else if (type === 'cell') { 
         sceneCode = `const g=new THREE.Group();scene.add(g);scene.add(new THREE.AmbientLight(0x404040, 2));const l=new THREE.PointLight(0xffffff, 1);l.position.set(5,5,5);scene.add(l);const mem=new THREE.Mesh(new THREE.SphereGeometry(2,32,32),new THREE.MeshPhongMaterial({color:0x3b82f6,transparent:true,opacity:0.3,wireframe:true}));g.add(mem);const nuc=new THREE.Mesh(new THREE.SphereGeometry(0.6,32,32),new THREE.MeshPhongMaterial({color:0x9333ea}));g.add(nuc);for(let i=0;i<8;i++){const mito=new THREE.Mesh(new THREE.CapsuleGeometry(0.1,0.3,4,8),new THREE.MeshPhongMaterial({color:0xf59e0b}));mito.position.set((Math.random()-0.5)*2.5,(Math.random()-0.5)*2.5,(Math.random()-0.5)*2.5);mito.rotation.set(Math.random()*Math.PI,Math.random()*Math.PI,0);g.add(mito);}function updateScene(){g.rotation.x+=0.002;g.rotation.y+=0.003;nuc.scale.setScalar(1+Math.sin(Date.now()*0.003)*0.05);}`;
-    } else if (type === 'gravity') { // NEW 3D ANIMATION: Fisika Gravitasi
+    } else if (type === 'gravity') { 
         sceneCode = `const g=new THREE.Group();scene.add(g);scene.add(new THREE.AmbientLight(0x888888));const l=new THREE.DirectionalLight(0xffffff,1);l.position.set(5,10,2);scene.add(l);const floor=new THREE.Mesh(new THREE.BoxGeometry(6,0.2,6),new THREE.MeshPhongMaterial({color:0x475569}));floor.position.y=-2;g.add(floor);const balls=[];for(let i=0;i<3;i++){const b=new THREE.Mesh(new THREE.SphereGeometry(0.3,32,32),new THREE.MeshPhongMaterial({color:i===0?0xef4444:i===1?0x22c55e:0x3b82f6}));b.position.set(i*1.5-1.5,2+i,-i*0.5);g.add(b);balls.push({m:b,v:0,y:b.position.y});}function updateScene(){g.rotation.y+=0.005;balls.forEach(b=>{b.v-=0.015;b.y+=b.v;if(b.y<=-1.7){b.y=-1.7;b.v*=-0.8;}b.m.position.y=b.y;});}`;
     }
 
@@ -598,7 +1064,7 @@ const SummarizerView = () => {
       // 🚨 ATURAN KETAT UNTUK AI AGAR SESUAI DENGAN PERMINTAAN PENGGUNA 🚨
       const systemInstruction = `Anda adalah ELGO, asisten AI edukatif dari TELAGO. Anda AHLI dalam menjelaskan materi secara relevan, LENGKAP, DETAIL, namun PADAT. 
       ATURAN MUTLAK:
-      1. KEMBALIKAN DALAM FORMAT HTML MURNI (Gunakan <h3>, <p>, <ul>, <li>, <b>). JANGAN PERNAH gunakan Markdown (\`\`\`html) atau (***).
+      1. KEMBALIKAN DALAM FORMAT HTML MURNI (Gunakan <h3>, <p>, <ul>, <li>, <b>). JANGAN PERNAH gunakan Markdown (\`\`\`html) atau (***) atau (###).
       2. RUMUS MATEMATIKA: Wajib gunakan simbol asli (seperti x², √, Σ, +, -). Jangan gunakan pagar (#) atau bintang (*). Jika ada rumus penting, bungkus dengan <div class="formula-box">RUMUS</div>.
       3. GUNAKAN EMOTIKON yang relevan di setiap paragraf atau poin list (Contoh: 🌍, 🚀, 💡, 🔬).
       4. FITUR STABILO: Anda WAJIB memberikan highlight kuning menggunakan tag <mark>kata penting</mark>. JUMLAHNYA HARUS PERSIS 5 SAMPAI 6 HIGHLIGHT di seluruh teks. Jangan kurang, jangan lebih!
