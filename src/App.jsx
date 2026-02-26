@@ -1513,17 +1513,14 @@ const SummarizerView = () => {
 
   // =========================================================================
   // FUNGSI INTI AI: AUTO-FALLBACK MODEL (ANTI ERROR 404)
-  // Fungsi ini otomatis mencoba berbagai model AI. Jika satu gagal, dia coba yang lain.
   // =========================================================================
   const callGeminiAPI = async (promptText, systemInstruction, responseMimeType = "text/plain") => {
-    let apiKey = "";
-    try {
-        // eslint-disable-next-line
-        apiKey = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_GEMINI_API_KEY : "";
-    } catch(e) {}
+    
+    // PERBAIKAN: Memaksa Vite membaca variabel secara langsung (Wajib untuk Netlify)
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
     if (!apiKey) {
-        throw new Error("Kunci API (VITE_GEMINI_API_KEY) tidak ditemukan di pengaturan sistem.");
+        throw new Error("Kunci API (VITE_GEMINI_API_KEY) tidak ditemukan. Pastikan kamu sudah mengatur Environment Variables di Netlify dan melakukan 'Clear cache and deploy site'.");
     }
 
     // Daftar model yang akan dicoba berurutan dari yang paling baru
