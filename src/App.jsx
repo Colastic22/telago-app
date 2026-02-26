@@ -1507,7 +1507,7 @@ const SummarizerView = () => {
   const [quizError, setQuizError] = useState('');
 
   // =========================================================================
-  // FUNGSI API OPENROUTER (PENGGANTI GOOGLE SDK YANG ERROR)
+  // FUNGSI API OPENROUTER DENGAN MODEL ARCEE-AI TRINITY (GRATIS)
   // =========================================================================
   const callOpenRouterAPI = async (promptText, systemInstruction) => {
     let apiKey = "";
@@ -1530,7 +1530,7 @@ const SummarizerView = () => {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "google/gemini-1.5-flash:free", // Tetap menggunakan kecerdasan Gemini!
+                model: "arcee-ai/trinity-large-preview:free", // Model yang kamu minta! 100% Gratis.
                 messages: [
                     { role: "system", content: systemInstruction },
                     { role: "user", content: promptText }
@@ -1552,6 +1552,7 @@ const SummarizerView = () => {
         throw err;
     }
   };
+  // =========================================================================
 
   const generateSummary = async () => {
     if (!topicInput.trim()) return;
@@ -1567,10 +1568,7 @@ const SummarizerView = () => {
       let text = await callOpenRouterAPI(prompt, systemInstruction);
       
       if (text) {
-         // Bersihkan markdown HTML dari OpenRouter
          text = text.replace(/```html\n?/gi, '').replace(/```\n?/g, '');
-         
-         // Parsing Animasi 3D
          text = text.replace(/\[ANIMASI_3D_ATOM\]/gi, get3DIframe('atom'));
          text = text.replace(/\[ANIMASI_3D_TATA_SURYA\]/gi, get3DIframe('solar'));
          text = text.replace(/\[ANIMASI_3D_GEOMETRI\]/gi, get3DIframe('geometry'));
@@ -1582,7 +1580,7 @@ const SummarizerView = () => {
 
     } catch (err) {
       console.error("AI Summary Error:", err);
-      setError(`${err.message}`);
+      setError(`Terjadi kesalahan AI: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -1598,7 +1596,7 @@ const SummarizerView = () => {
 
        let text = await callOpenRouterAPI(prompt, systemInstruction);
        
-       // Bersihkan markdown JSON dari OpenRouter
+       // Pembersihan JSON yang Anti-Error
        text = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
        const qData = JSON.parse(text);
 
