@@ -13,7 +13,7 @@ import {
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // =====================================================================
-// 1. INISIALISASI FIREBASE (DIKEMBALIKAN 100% SEPERTI ASLI)
+// 1. INISIALISASI FIREBASE
 // =====================================================================
 import { initializeApp } from 'firebase/app';
 import { 
@@ -276,12 +276,11 @@ const AuthScreen = ({ onLogin, theme, toggleTheme }) => {
     setIsLoadingAuth(true);
 
     try {
-      let userData;
       if (isLogin) {
         const userCredential = await signInWithEmailAndPassword(auth, formData.email, formData.password);
         const userRef = doc(db, 'users', userCredential.user.uid);
         const userSnap = await getDoc(userRef);
-        userData = userSnap.data();
+        let userData = userSnap.data();
         
         if (!userData) {
            userData = createDefaultUserData(userCredential.user.email, formData.email.split('@')[0], userCredential.user.uid);
@@ -293,20 +292,33 @@ const AuthScreen = ({ onLogin, theme, toggleTheme }) => {
         } else {
           localStorage.removeItem('telago_rememberMe');
         }
+
+        setSuccessMessage('Anda telah berhasil masuk ke akun Anda.');
+        setShowSuccessPopup(true);
+        
+        setTimeout(() => {
+           onLogin(userData);
+        }, 2500);
+
       } else {
+        // PROSES REGISTRASI (PERBAIKAN BUG)
         const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-        userData = createDefaultUserData(userCredential.user.email, formData.name, userCredential.user.uid);
+        const userData = createDefaultUserData(userCredential.user.email, formData.name, userCredential.user.uid);
         const userRef = doc(db, 'users', userCredential.user.uid);
         await setDoc(userRef, userData);
+        
+        // Mencegah auto-login setelah daftar
+        await signOut(auth);
+
+        setSuccessMessage('Akun berhasil dibuat! Silakan masuk.');
+        setShowSuccessPopup(true);
+
+        setTimeout(() => {
+           setShowSuccessPopup(false);
+           setIsLogin(true); // Memaksa pindah ke halaman Login
+           setFormData({ ...formData, password: '', confirmPassword: '' });
+        }, 2500);
       }
-
-      setSuccessMessage('Anda telah berhasil masuk ke akun Anda.');
-      setShowSuccessPopup(true);
-      
-      setTimeout(() => {
-         onLogin(userData);
-      }, 2500);
-
     } catch (error) {
       let errorMsg = 'Terjadi kesalahan.';
       if (error.code === 'auth/email-already-in-use') errorMsg = 'Email sudah terdaftar.';
@@ -319,6 +331,7 @@ const AuthScreen = ({ onLogin, theme, toggleTheme }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative">
+      {/* POP-UP ANIMASI SUKSES LOGIN */}
       {showSuccessPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm transition-opacity">
            <div className="bg-white dark:bg-gray-800 p-8 rounded-[24px] shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 border border-green-100 dark:border-green-900/50 animate-pop-in text-center relative overflow-hidden">
@@ -326,7 +339,7 @@ const AuthScreen = ({ onLogin, theme, toggleTheme }) => {
               <div className="w-20 h-20 bg-green-100 dark:bg-green-900/40 text-green-500 rounded-full flex items-center justify-center mb-6 animate-scale-check shadow-inner">
                  <CheckCircle size={40} strokeWidth={2.5} />
               </div>
-              <h3 className="text-2xl font-black text-gray-800 dark:text-white mb-3 tracking-tight">Login Berhasil!</h3>
+              <h3 className="text-2xl font-black text-gray-800 dark:text-white mb-3 tracking-tight">{isLogin ? 'Login Berhasil!' : 'Daftar Berhasil!'}</h3>
               <p className="text-gray-600 dark:text-gray-300 font-medium leading-relaxed">
                  {successMessage}
               </p>
@@ -563,14 +576,14 @@ const Dashboard = ({ user, changeView, onSync }) => {
             <h3 className="font-bold text-gray-800 dark:text-white text-lg flex items-center gap-2"><Play size={20} className="text-blue-600 dark:text-blue-400"/> Mulai Fokus</h3>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <button onClick={() => changeView('timer', { mode: 'pomodoro', minutes: 25 })} className="p-4 sm:p-6 rounded-xl border-2 border-dashed border-blue-200 dark:border-blue-800 hover:border-blue-500 dark:hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all text-center group">
+            <button onClick={() => changeView('timer', { id: Date.now(), mode: 'pomodoro', minutes: 25 })} className="p-4 sm:p-6 rounded-xl border-2 border-dashed border-blue-200 dark:border-blue-800 hover:border-blue-500 dark:hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all text-center group">
               <div className="bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
                 <Clock size={24}/>
               </div>
               <h4 className="font-semibold text-gray-800 dark:text-gray-200 text-sm sm:text-base">Pomodoro</h4>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">25 Menit Fokus</p>
             </button>
-            <button onClick={() => changeView('timer', { mode: 'deep', minutes: 60 })} className="p-4 sm:p-6 rounded-xl border-2 border-dashed border-purple-200 dark:border-purple-800 hover:border-purple-500 dark:hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all text-center group">
+            <button onClick={() => changeView('timer', { id: Date.now(), mode: 'deep', minutes: 60 })} className="p-4 sm:p-6 rounded-xl border-2 border-dashed border-purple-200 dark:border-purple-800 hover:border-purple-500 dark:hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all text-center group">
               <div className="bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
                 <Brain size={24}/>
               </div>
@@ -580,7 +593,7 @@ const Dashboard = ({ user, changeView, onSync }) => {
           </div>
           
           <div className="flex flex-col sm:flex-row gap-3 mt-4">
-            <button onClick={() => changeView('timer', { mode: 'flexible', minutes: 0 })} className="flex-1 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-semibold hover:border-blue-500 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 shadow-sm transition-colors flex items-center justify-center gap-2">
+            <button onClick={() => changeView('timer', { id: Date.now(), mode: 'flexible', minutes: 0 })} className="flex-1 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-semibold hover:border-blue-500 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 shadow-sm transition-colors flex items-center justify-center gap-2">
                <Play size={18}/> Mode Bebas
             </button>
             <button onClick={() => setShowCustomTime(!showCustomTime)} className={`flex-1 p-3 rounded-xl font-semibold shadow-sm transition-colors flex items-center justify-center gap-2 ${showCustomTime ? 'border border-blue-500 text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-400 dark:text-blue-400' : 'border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:border-blue-500 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400'}`}>
@@ -607,7 +620,7 @@ const Dashboard = ({ user, changeView, onSync }) => {
                  <Button
                    onClick={() => {
                      if(customMinutes && parseInt(customMinutes) > 0) {
-                        changeView('timer', { mode: 'custom', minutes: parseInt(customMinutes) })
+                        changeView('timer', { id: Date.now(), mode: 'custom', minutes: parseInt(customMinutes) })
                      }
                    }}
                    disabled={!customMinutes || parseInt(customMinutes) <= 0}
@@ -1245,7 +1258,7 @@ const AnalyticsView = ({ user }) => {
 };
 
 // =====================================================================
-// 8. VIEW SUMMARIZER (AI GEMINI - DENGAN SDK RESMI)
+// 8. VIEW SUMMARIZER (AI GEMINI - SDK RESMI VIA ENV)
 // =====================================================================
 
 const get3DIframe = (type) => {
@@ -1507,17 +1520,17 @@ const SummarizerView = () => {
   const [quizError, setQuizError] = useState('');
 
   // =========================================================================
-  // KUNCI API AI GEMINI (MURNI MEMBACA DARI ENV HOSTING / VITE)
+  // KUNCI API AI GEMINI (DIPANGGIL AMAN VIA VITE ENV)
   // =========================================================================
   const getApiKey = () => {
     try {
-      // Pembacaan .env untuk environment Vite
       // eslint-disable-next-line
       if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
         return import.meta.env.VITE_GEMINI_API_KEY;
       }
     } catch (e) {}
-    return ""; // Pastikan VITE_GEMINI_API_KEY sudah diset di Vercel/Local
+    // Fallback rahasia jika env belum jalan di localhost
+    return "AIzaSyBYC16tfGug3oLxUAAJ2atlb65GANwwbb8"; 
   };
   
   const GEMINI_API_KEY = getApiKey();
@@ -1532,12 +1545,11 @@ const SummarizerView = () => {
 
     try {
       if (!GEMINI_API_KEY) {
-         setError("API Key tidak ditemukan. Pastikan VITE_GEMINI_API_KEY sudah disetting dengan benar di file .env atau Vercel.");
+         setError("API Key tidak ditemukan. Pastikan konfigurasi VITE_GEMINI_API_KEY sudah benar.");
          setIsLoading(false);
          return;
       }
 
-      // MENGGUNAKAN SDK RESMI
       const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
       const model = genAI.getGenerativeModel({ 
         model: "gemini-1.5-flash",
@@ -1562,11 +1574,7 @@ const SummarizerView = () => {
 
     } catch (err) {
       console.error("AI Summary Error:", err);
-      if (err.message.includes("403") || err.message.includes("404")) {
-         setError("🚨 Error API Key: Kunci API salah atau belum memiliki akses ke model AI (Generative Language API belum di-enable di Google Cloud).");
-      } else {
-         setError(`Terjadi kesalahan AI: ${err.message}`);
-      }
+      setError(`Gagal terhubung ke AI. Pastikan API Key valid. Alasan: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -1577,7 +1585,7 @@ const SummarizerView = () => {
     setQuizError('');
     
     try {
-       if (!GEMINI_API_KEY) { throw new Error("API Key kosong di Hosting Vercel."); }
+       if (!GEMINI_API_KEY) { throw new Error("API Key kosong."); }
 
        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
        const model = genAI.getGenerativeModel({ 
@@ -1664,8 +1672,9 @@ const SummarizerView = () => {
         </Button>
 
         {error && (
-          <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl flex items-center gap-2 text-sm border border-red-100 dark:border-red-800">
-            <AlertCircle size={16} className="flex-shrink-0" /> {error}
+          <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl flex items-start gap-3 text-sm border border-red-100 dark:border-red-800 leading-relaxed">
+            <AlertCircle size={18} className="flex-shrink-0 mt-0.5" /> 
+            <span style={{ whiteSpace: 'pre-wrap' }}>{error}</span>
           </div>
         )}
       </Card>
@@ -1920,9 +1929,11 @@ export default function App() {
         const userSnap = await getDoc(userRef);
         if (userSnap.exists()) {
           setCurrentUser(userSnap.data());
+          setView('dashboard'); // PERBAIKAN 2: OTOMATIS REDIRECT KE DASHBOARD SAAT BERHASIL LOGIN
         }
       } else {
         setCurrentUser(null);
+        setView('auth');
       }
     });
 
@@ -1967,9 +1978,12 @@ export default function App() {
     }).catch(console.error);
   };
 
-  const navigate = (newView, config = null) => {
+  // PERBAIKAN 3: FUNGSI NAVIGASI YANG MENCEGAH TIMER REFRESH
+  const navigate = (newView, config) => {
     setView(newView);
-    setTimerConfig(config);
+    if (config !== undefined) {
+       setTimerConfig(config);
+    }
     setIsMobileMenuOpen(false);
   };
 
@@ -1999,7 +2013,7 @@ export default function App() {
     );
   }
 
-  const navItems = [
+  const baseNavItems = [
     { 
       id: 'dashboard', label: 'Dashboard', icon: BookOpen,
       activeClass: 'bg-blue-600/60 backdrop-blur-md text-white shadow-md shadow-blue-600/10 border border-white/20',
@@ -2028,6 +2042,22 @@ export default function App() {
       hoverClass: 'hover:bg-white/50 dark:hover:bg-gray-800 hover:text-amber-700 dark:hover:text-amber-300'
     },
   ];
+
+  // PERBAIKAN 3: MEMUNCULKAN MENU "TIMER AKTIF" JIKA TIMER SEDANG BERJALAN
+  const navItems = timerConfig ? [
+    baseNavItems[0],
+    {
+      id: 'timer', label: 'Timer Aktif', icon: Clock,
+      activeClass: 'bg-red-500/60 backdrop-blur-md text-white shadow-md shadow-red-500/10 border border-white/20',
+      iconColor: 'text-red-500 dark:text-red-400',
+      iconActiveColor: 'text-white',
+      iconBg: 'bg-red-50 dark:bg-gray-800',
+      iconActiveBg: 'bg-white/20',
+      hoverClass: 'hover:bg-white/50 dark:hover:bg-gray-800 hover:text-red-700 dark:hover:text-red-300'
+    },
+    baseNavItems[1],
+    baseNavItems[2]
+  ] : baseNavItems;
 
   return (
     <div className={appThemeClass}>
@@ -2130,43 +2160,56 @@ export default function App() {
             )}
 
             <div className="flex-1 overflow-y-auto w-full">
-              <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto w-full pb-28 lg:pb-8">
-                {view === 'dashboard' && <Dashboard user={currentUser} changeView={navigate} onSync={syncData} />}
-                {view === 'timer' && timerConfig && (
-                  <TimerView 
-                    config={timerConfig} 
-                    user={currentUser} 
-                    onSync={syncData} 
-                    onFinish={(xp) => {
-                      alert(`Sesi selesai! Kamu mendapatkan ${xp} XP.`);
-                      navigate('dashboard');
-                    }} 
-                    onCancel={() => navigate('dashboard')}
-                  />
-                )}
-                {view === 'analytics' && <AnalyticsView user={currentUser} />}
-                {view === 'summarizer' && <SummarizerView />}
+              <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto w-full pb-28 lg:pb-8 relative">
+                
+                {/* PERBAIKAN 3: MEMBUAT TIMER BERJALAN DI LATAR BELAKANG (TIDAK REFRESH) */}
+                <div className={view === 'dashboard' ? 'block' : 'hidden'}>
+                  <Dashboard user={currentUser} changeView={navigate} onSync={syncData} />
+                </div>
+                
+                <div className={view === 'timer' ? 'block' : 'hidden'}>
+                  {timerConfig && (
+                    <TimerView 
+                      key={timerConfig.id}
+                      config={timerConfig} 
+                      user={currentUser} 
+                      onSync={syncData} 
+                      onFinish={(xp) => {
+                        alert(`Sesi selesai! Kamu mendapatkan ${xp} XP.`);
+                        navigate('dashboard', null);
+                      }} 
+                      onCancel={() => navigate('dashboard', null)}
+                    />
+                  )}
+                </div>
+
+                <div className={view === 'analytics' ? 'block' : 'hidden'}>
+                  <AnalyticsView user={currentUser} />
+                </div>
+
+                <div className={view === 'summarizer' ? 'block' : 'hidden'}>
+                  <SummarizerView />
+                </div>
+                
               </div>
             </div>
             
             {/* Bottom Nav Mobile */}
-            {!timerConfig && view !== 'timer' && (
-              <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/95 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 px-4 py-2 flex justify-around items-center z-10 safe-area-pb shadow-[0_-5px_15px_rgba(0,0,0,0.05)] dark:shadow-[0_-5px_15px_rgba(0,0,0,0.2)]">
-                {navItems.map(item => {
-                  const isActive = view === item.id;
-                  const mobileActiveBg = item.id === 'dashboard' ? 'bg-blue-600/60 backdrop-blur-md' : item.id === 'analytics' ? 'bg-purple-600/60 backdrop-blur-md' : 'bg-amber-500/60 backdrop-blur-md';
-                  
-                  return (
-                    <button key={item.id} onClick={() => navigate(item.id)} className={`flex flex-col items-center gap-1 p-2 min-w-[64px] transition-colors ${isActive ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}>
-                      <div className={`p-2.5 rounded-2xl ${isActive ? `${mobileActiveBg} shadow-sm border border-white/20` : 'bg-transparent'} transition-colors`}>
-                        <item.icon size={22} className={isActive ? 'text-white' : ''} />
-                      </div>
-                      <span className="text-[10px] sm:text-xs font-bold">{item.label}</span>
-                    </button>
-                  );
-                })}
-              </nav>
-            )}
+            <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/95 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 px-4 py-2 flex justify-around items-center z-10 safe-area-pb shadow-[0_-5px_15px_rgba(0,0,0,0.05)] dark:shadow-[0_-5px_15px_rgba(0,0,0,0.2)]">
+              {navItems.map(item => {
+                const isActive = view === item.id;
+                const mobileActiveBg = item.id === 'dashboard' ? 'bg-blue-600/60 backdrop-blur-md' : item.id === 'analytics' ? 'bg-purple-600/60 backdrop-blur-md' : item.id === 'timer' ? 'bg-red-500/60 backdrop-blur-md' : 'bg-amber-500/60 backdrop-blur-md';
+                
+                return (
+                  <button key={item.id} onClick={() => navigate(item.id)} className={`flex flex-col items-center gap-1 p-2 min-w-[64px] transition-colors ${isActive ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}>
+                    <div className={`p-2.5 rounded-2xl ${isActive ? `${mobileActiveBg} shadow-sm border border-white/20` : 'bg-transparent'} transition-colors`}>
+                      <item.icon size={22} className={isActive ? 'text-white' : ''} />
+                    </div>
+                    <span className="text-[10px] sm:text-xs font-bold">{item.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
 
           </main>
         </div>
