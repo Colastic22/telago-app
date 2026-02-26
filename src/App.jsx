@@ -13,7 +13,7 @@ import {
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // =====================================================================
-// 1. INISIALISASI FIREBASE (MENGGUNAKAN CONFIG ASLI)
+// 1. INISIALISASI FIREBASE (DIKEMBALIKAN 100% SEPERTI ASLI)
 // =====================================================================
 import { initializeApp } from 'firebase/app';
 import { 
@@ -319,7 +319,6 @@ const AuthScreen = ({ onLogin, theme, toggleTheme }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative">
-      {/* POP-UP ANIMASI SUKSES LOGIN */}
       {showSuccessPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm transition-opacity">
            <div className="bg-white dark:bg-gray-800 p-8 rounded-[24px] shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 border border-green-100 dark:border-green-900/50 animate-pop-in text-center relative overflow-hidden">
@@ -1508,16 +1507,17 @@ const SummarizerView = () => {
   const [quizError, setQuizError] = useState('');
 
   // =========================================================================
-  // KUNCI API AI GEMINI
+  // KUNCI API AI GEMINI (MURNI MEMBACA DARI ENV HOSTING / VITE)
   // =========================================================================
   const getApiKey = () => {
     try {
+      // Pembacaan .env untuk environment Vite
+      // eslint-disable-next-line
       if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
         return import.meta.env.VITE_GEMINI_API_KEY;
       }
     } catch (e) {}
-    // Fallback key dari user
-    return "AIzaSyBYC16tfGug3oLxUAAJ2atlb65GANwwbb8";
+    return ""; // Pastikan VITE_GEMINI_API_KEY sudah diset di Vercel/Local
   };
   
   const GEMINI_API_KEY = getApiKey();
@@ -1532,12 +1532,12 @@ const SummarizerView = () => {
 
     try {
       if (!GEMINI_API_KEY) {
-         setError("API Key tidak ditemukan. Pastikan VITE_GEMINI_API_KEY sudah disetting.");
+         setError("API Key tidak ditemukan. Pastikan VITE_GEMINI_API_KEY sudah disetting dengan benar di file .env atau Vercel.");
          setIsLoading(false);
          return;
       }
 
-      // PERBAIKAN BENARAN: Menggunakan SDK Resmi @google/generative-ai, BUKAN fetch manual lagi!
+      // MENGGUNAKAN SDK RESMI
       const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
       const model = genAI.getGenerativeModel({ 
         model: "gemini-1.5-flash",
@@ -1562,7 +1562,11 @@ const SummarizerView = () => {
 
     } catch (err) {
       console.error("AI Summary Error:", err);
-      setError(`Terjadi kesalahan AI: ${err.message}`);
+      if (err.message.includes("403") || err.message.includes("404")) {
+         setError("🚨 Error API Key: Kunci API salah atau belum memiliki akses ke model AI (Generative Language API belum di-enable di Google Cloud).");
+      } else {
+         setError(`Terjadi kesalahan AI: ${err.message}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -1573,14 +1577,13 @@ const SummarizerView = () => {
     setQuizError('');
     
     try {
-       if (!GEMINI_API_KEY) { throw new Error("API Key tidak ditemukan."); }
+       if (!GEMINI_API_KEY) { throw new Error("API Key kosong di Hosting Vercel."); }
 
-       // Menggunakan SDK Resmi untuk Kuis juga
        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
        const model = genAI.getGenerativeModel({ 
            model: "gemini-1.5-flash",
            systemInstruction: `Anda adalah guru ahli yang membuat soal evaluasi berkualitas. Anda HARUS mengembalikan data HANYA dalam format JSON array murni tanpa dibungkus markdown apapun. Format JSON wajib seperti ini:\n[\n  {\n    "question": "Pertanyaan soal disini",\n    "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],\n    "correctIndex": 0,\n    "explanation": "Penjelasan detail dan rasional mengapa opsi tersebut benar."\n  }\n]\nPerhatikan: correctIndex adalah angka index (0-3) dari jawaban yang benar.`,
-           generationConfig: { responseMimeType: "application/json" }
+           generationConfig: { responseMimeType: "application/json" } // Memaksa format JSON
        });
 
        const prompt = `Buatkan kuis pilihan ganda berjumlah persis 5 soal berdasarkan topik: "${topicInput}". Kuis ini harus berstandar pendidikan kurikulum Indonesia, berkualitas tinggi, dan menguji pemahaman mendalam.`;
@@ -1588,7 +1591,6 @@ const SummarizerView = () => {
        const result = await model.generateContent(prompt);
        let text = result.response.text();
        
-       // Pembersihan JSON yang Anti-Error
        text = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
        const qData = JSON.parse(text);
 
@@ -1693,6 +1695,7 @@ const SummarizerView = () => {
         </Card>
       )}
 
+      {/* --- KUIS INTERAKTIF UI --- */}
       {quizStatus === 'active' && quizData.length > 0 && (
          <Card className="p-6 sm:p-8 bg-gradient-to-b from-blue-50/50 to-white dark:from-gray-800 dark:to-gray-900 border-2 border-blue-100 dark:border-blue-900 shadow-xl animate-fade-in-up">
             <div className="flex justify-between items-center mb-6">
@@ -1752,6 +1755,7 @@ const SummarizerView = () => {
          </Card>
       )}
 
+      {/* --- HASIL KUIS UI --- */}
       {quizStatus === 'result' && (
          <Card className="p-6 sm:p-10 text-center bg-gradient-to-br from-white to-blue-50 dark:from-gray-900 dark:to-gray-800 shadow-2xl animate-fade-in-up">
             <div className="inline-flex items-center justify-center w-24 h-24 rounded-full mb-6 bg-gradient-to-r from-blue-500 to-indigo-600 shadow-lg">
@@ -1783,6 +1787,7 @@ const SummarizerView = () => {
          </Card>
       )}
 
+      {/* GLOBAL CSS UNTUK KONTEN HTML RINGKASAN & ANIMASI */}
       <style>{`
         .format-html-content h3 { font-size: 1.25rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #1E3A8A; display: flex; align-items: center; gap: 0.5rem; }
         .dark .format-html-content h3 { color: #60A5FA; }
@@ -1804,6 +1809,7 @@ const SummarizerView = () => {
         .dark .format-html-content th, .dark .format-html-content td { border-bottom-color: #374151; }
         .dark .format-html-content th { background-color: #1F2937; color: #E5E7EB; }
 
+        /* KOTAK RUMUS / FORMULA BOX (ELEGAN & PROFESIONAL) */
         .formula-box {
            background: #f8fafc; border-left: 4px solid #3b82f6;
            padding: 1.25rem 1.5rem; margin: 1.5rem 0; border-radius: 0 12px 12px 0;
@@ -1815,7 +1821,10 @@ const SummarizerView = () => {
            background: #1e293b; border-left-color: #60a5fa; color: #f8fafc;
            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
         }
+
+        /* UPGRADED INTERACTIVE 2D ANIMATIONS (Safe SVG URI format) */
         
+        /* 1. Transverse Wave Animation (Fisika/Suara) */
         .anim-physics-wave { width: 100%; max-width: 400px; height: 160px; margin: 2rem auto; position: relative; border-radius: 12px; background: #f8fafc; border: 2px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
         .dark .anim-physics-wave { background: #0f172a; border-color: #334155; }
         .anim-physics-wave::before { content: ''; position: absolute; top: 50%; left: 0; width: 100%; height: 2px; background: #64748b; z-index: 1; }
@@ -1827,12 +1836,13 @@ const SummarizerView = () => {
         }
         @keyframes waveSlide { 0% { transform: translateX(0); } 100% { transform: translateX(-150px); } }
 
+        /* 2. Quadratic Parabola Animation (Matematika) */
         .anim-parabola-container {
            position: relative; width: 100%; max-width: 300px; height: 250px; margin: 2rem auto; background-image: linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(90deg, #cbd5e1 1px, transparent 1px); background-size: 25px 25px; background-position: center; border: 2px solid #94a3b8; border-radius: 8px; background-color: #f8fafc; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); overflow: hidden;
         }
         .dark .anim-parabola-container { background-color: #0f172a; background-image: linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px); border-color: #475569; }
-        .anim-axis-x { absolute; top: 60%; left: 0; width: 100%; height: 2px; background: #334155; z-index: 1; }
-        .anim-axis-y { absolute; top: 0; left: 50%; width: 2px; height: 100%; background: #334155; z-index: 1; }
+        .anim-axis-x { position: absolute; top: 60%; left: 0; width: 100%; height: 2px; background: #334155; z-index: 1; }
+        .anim-axis-y { position: absolute; top: 0; left: 50%; width: 2px; height: 100%; background: #334155; z-index: 1; }
         .dark .anim-axis-x, .dark .anim-axis-y { background: #cbd5e1; }
         .anim-parabola {
            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2;
@@ -1841,6 +1851,7 @@ const SummarizerView = () => {
         }
         @keyframes pulseGraph { 0% { opacity: 0.8; transform: scale(0.99) translateY(2px); filter: drop-shadow(0 0 2px rgba(34,197,94,0.3)); } 100% { opacity: 1; transform: scale(1) translateY(0); filter: drop-shadow(0 0 8px rgba(34,197,94,0.8)); } }
 
+        /* 3. Pendulum/Bandul (Fisika Mekanik) */
         .anim-pendulum-container { position: relative; width: 100%; max-width: 250px; height: 180px; margin: 2rem auto; border-top: 4px solid #64748b; }
         .dark .anim-pendulum-container { border-top-color: #94a3b8; }
         .anim-pendulum { position: absolute; top: 0; left: 50%; transform-origin: top center; animation: swing 1.5s infinite ease-in-out alternate; }
@@ -1848,6 +1859,7 @@ const SummarizerView = () => {
         .anim-pendulum-bob { width: 36px; height: 36px; background: radial-gradient(circle at 30% 30%, #fde047, #d97706); border-radius: 50%; transform: translateX(-17px); box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         @keyframes swing { 0% { transform: rotate(35deg); } 100% { transform: rotate(-35deg); } }
 
+        /* 4. Terminal Informatics (Ilmu Komputer) */
         .anim-informatics-terminal { width: 100%; max-width: 450px; background: #0f172a; border-radius: 10px; border: 1px solid #334155; margin: 2rem auto; overflow: hidden; box-shadow: 0 10px 20px -5px rgba(0,0,0,0.5); font-family: 'Courier New', Courier, monospace; }
         .anim-term-header { background: #1e293b; padding: 12px; display: flex; gap: 8px; border-bottom: 1px solid #334155; }
         .anim-term-dot { width: 14px; height: 14px; border-radius: 50%; }
@@ -1863,6 +1875,7 @@ const SummarizerView = () => {
         @keyframes typingTerm { from { width: 0; border-right-color: #22c55e; } 99% { border-right-color: #22c55e; } to { width: 100%; border-right-color: transparent; } }
         @keyframes blinkTerm { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
+        /* 5. Pythagoras Theorem 2D */
         .anim-pythagoras-container {
            position: relative; width: 100%; max-width: 300px; height: 300px; margin: 2rem auto;
            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 300'%3E%3Cpolygon points='100,180 180,120 180,180' fill='%2322c55e' stroke='%23166534' stroke-width='2'/%3E%3Crect x='180' y='120' width='60' height='60' fill='%23ef4444' stroke='%23991b1b' stroke-width='2'/%3E%3Crect x='100' y='180' width='80' height='80' fill='%23f97316' stroke='%239a3412' stroke-width='2'/%3E%3Cpolygon points='100,180 180,120 120,40 40,100' fill='%231d4ed8' stroke='%231e3a8a' stroke-width='2'/%3E%3Ctext x='200' y='155' fill='white' font-weight='bold' font-size='24' font-family='sans-serif'%3Ea²%3C/text%3E%3Ctext x='130' y='230' fill='white' font-weight='bold' font-size='24' font-family='sans-serif'%3Eb²%3C/text%3E%3Ctext x='100' y='120' fill='white' font-weight='bold' font-size='24' font-family='sans-serif'%3Ec²%3C/text%3E%3C/svg%3E");
@@ -1871,6 +1884,7 @@ const SummarizerView = () => {
         }
         @keyframes floatPyth { 0%, 100% { transform: translateY(0); filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1)); } 50% { transform: translateY(-8px); filter: drop-shadow(0 10px 15px rgba(0,0,0,0.2)); } }
 
+        /* 6. Sorting Algorithm Visualization (Informatics) */
         .anim-sorting-container { position: relative; height: 160px; margin: 2rem auto; width: 220px; border-bottom: 3px solid #cbd5e1; }
         .dark .anim-sorting-container { border-bottom-color: #475569; }
         .anim-sort-bar { position: absolute; bottom: 0; width: 34px; border-radius: 4px 4px 0 0; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; justify-content: center; align-items: flex-end; padding-bottom: 8px; color: white; font-weight: bold; font-size: 12px; font-family: monospace; }
@@ -1897,7 +1911,7 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [theme, setTheme] = useState('light');
 
-  // Menggunakan onAuthStateChanged milik Firebase
+  // Menggunakan onAuthStateChanged milik Firebase (DIKEMBALIKAN)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
