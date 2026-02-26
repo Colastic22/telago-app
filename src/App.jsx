@@ -8,11 +8,6 @@ import {
 } from 'lucide-react';
 
 // =====================================================================
-// 0. IMPORT SDK AI GOOGLE RESMI
-// =====================================================================
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-// =====================================================================
 // 1. INISIALISASI FIREBASE
 // =====================================================================
 import { initializeApp } from 'firebase/app';
@@ -301,13 +296,11 @@ const AuthScreen = ({ onLogin, theme, toggleTheme }) => {
         }, 2500);
 
       } else {
-        // PROSES REGISTRASI (PERBAIKAN BUG)
         const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
         const userData = createDefaultUserData(userCredential.user.email, formData.name, userCredential.user.uid);
         const userRef = doc(db, 'users', userCredential.user.uid);
         await setDoc(userRef, userData);
         
-        // Mencegah auto-login setelah daftar
         await signOut(auth);
 
         setSuccessMessage('Akun berhasil dibuat! Silakan masuk.');
@@ -315,7 +308,7 @@ const AuthScreen = ({ onLogin, theme, toggleTheme }) => {
 
         setTimeout(() => {
            setShowSuccessPopup(false);
-           setIsLogin(true); // Memaksa pindah ke halaman Login
+           setIsLogin(true); 
            setFormData({ ...formData, password: '', confirmPassword: '' });
         }, 2500);
       }
@@ -331,7 +324,6 @@ const AuthScreen = ({ onLogin, theme, toggleTheme }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative">
-      {/* POP-UP ANIMASI SUKSES LOGIN */}
       {showSuccessPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm transition-opacity">
            <div className="bg-white dark:bg-gray-800 p-8 rounded-[24px] shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 border border-green-100 dark:border-green-900/50 animate-pop-in text-center relative overflow-hidden">
@@ -1258,7 +1250,7 @@ const AnalyticsView = ({ user }) => {
 };
 
 // =====================================================================
-// 8. VIEW SUMMARIZER (AI GEMINI - SDK RESMI VIA ENV)
+// 8. VIEW SUMMARIZER (AUTO-FALLBACK API NATIVE FETCH)
 // =====================================================================
 
 const get3DIframe = (type) => {
@@ -1520,21 +1512,71 @@ const SummarizerView = () => {
   const [quizError, setQuizError] = useState('');
 
   // =========================================================================
-  // KUNCI API AI GEMINI (DIPANGGIL AMAN VIA VITE ENV)
+  // FUNGSI INTI AI: AUTO-FALLBACK MODEL (ANTI ERROR 404)
+  // Fungsi ini otomatis mencoba berbagai model AI. Jika satu gagal, dia coba yang lain.
   // =========================================================================
-  const getApiKey = () => {
+  const callGeminiAPI = async (promptText, systemInstruction, responseMimeType = "text/plain") => {
+    let apiKey = "";
     try {
-      // eslint-disable-next-line
-      if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
-        return import.meta.env.VITE_GEMINI_API_KEY;
-      }
-    } catch (e) {}
-    // Fallback rahasia jika env belum jalan di localhost
-    return "AIzaSyBYC16tfGug3oLxUAAJ2atlb65GANwwbb8"; 
+        // eslint-disable-next-line
+        apiKey = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_GEMINI_API_KEY : "";
+    } catch(e) {}
+
+    if (!apiKey) {
+        throw new Error("Kunci API (VITE_GEMINI_API_KEY) tidak ditemukan di pengaturan sistem.");
+    }
+
+    // Daftar model yang akan dicoba berurutan dari yang paling baru
+    const models = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.0-pro", "gemini-pro"];
+    let lastErrorMsg = "";
+
+    for (let i = 0; i < models.length; i++) {
+        const modelName = models[i];
+        try {
+            // Kita menggunakan Endpoint v1 API murni (bukan SDK) karena paling stabil di semua Hosting
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [{ role: "user", parts: [{ text: promptText }] }],
+            };
+
+            if (systemInstruction) {
+                payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+            }
+
+            if (responseMimeType === "application/json") {
+                payload.generationConfig = { responseMimeType: "application/json" };
+            }
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error?.message || `Ditolak oleh model ${modelName}`);
+            }
+
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) {
+                return text; // Berhasil! Kembalikan hasil dan hentikan pencarian model
+            } else {
+                throw new Error("Respons AI kosong.");
+            }
+
+        } catch (err) {
+            console.warn(`[Peringatan AI] Gagal mengakses model ${modelName}. Mencoba model alternatif...`);
+            lastErrorMsg = err.message;
+            // Jika ini sudah model terakhir dan tetap gagal, lempar error ke layar utama
+            if (i === models.length - 1) {
+                throw new Error(`Semua model AI gagal diakses. Pastikan API Key valid. Detail: ${lastErrorMsg}`);
+            }
+        }
+    }
   };
-  
-  const GEMINI_API_KEY = getApiKey();
-  // =========================================================================
 
   const generateSummary = async () => {
     if (!topicInput.trim()) return;
@@ -1544,22 +1586,10 @@ const SummarizerView = () => {
     setQuizStatus('idle'); 
 
     try {
-      if (!GEMINI_API_KEY) {
-         setError("API Key tidak ditemukan. Pastikan konfigurasi VITE_GEMINI_API_KEY sudah benar.");
-         setIsLoading(false);
-         return;
-      }
-
-      const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash",
-        systemInstruction: "Anda adalah ELGO, asisten AI dari TELAGO. Jelaskan materi dengan gaya interaktif dan profesional. Gunakan HTML murni. Wajib gunakan <div class=\"formula-box\"> untuk rumus matematika. Wajib selektif dan pintar dalam memilih animasi, jangan pasang animasi yang salah konteks atau tidak relevan."
-      });
-
+      const systemInstruction = "Anda adalah ELGO, asisten AI dari TELAGO. Jelaskan materi dengan gaya interaktif dan profesional. Gunakan HTML murni. Wajib gunakan <div class=\"formula-box\"> untuk rumus matematika. Wajib selektif dan pintar dalam memilih animasi, jangan pasang animasi yang salah konteks atau tidak relevan.";
       const prompt = `Tolong ringkas dan jelaskan materi/topik berikut secara komprehensif:\n\n${topicInput}\n\nInstruksi Format WAJIB:\n1. Output HARUS berupa format HTML murni yang rapi (gunakan <h3>, <p>, <ul>, <li>, <b>). JANGAN gunakan markdown (\`\`\`).\n2. Gunakan tag <mark> HANYA untuk 3-5 kata kunci paling penting.\n3. RUMUS/PERSAMAAN MATEMATIKA: WAJIB gunakan <div class="formula-box">RUMUS ATAU PERSAMAAN DISINI</div> agar terlihat elegan dan profesional. Gunakan simbol matematika yang tepat (seperti ∑, √, ±, ², ³).\n4. ANIMASI: SANGAT PENTING! HANYA sisipkan SATU animasi JIKA BENAR-BENAR SANGAT RELEVAN DENGAN TOPIK. JIKA TOPIK TIDAK RELEVAN SAMA SEKALI (Contoh: Ekonomi, Sastra, Sosial, dll), DILARANG KERAS MEMASANG ANIMASI APAPUN.\n Pilihan Animasi (pilih 1 yang paling akurat):\n - 3D Struktur Atom (Kimia/Fisika Kuantum): [ANIMASI_3D_ATOM]\n - 3D Senyawa/Molekul H2O (Kimia Dasar): [ANIMASI_3D_MOLEKUL]\n - 3D Tata Surya (Astronomi): [ANIMASI_3D_TATA_SURYA]\n - 3D Bumi/Globe (Geografi/Sejarah Global): [ANIMASI_3D_BUMI]\n - 3D Geometri (Matematika Ruang): [ANIMASI_3D_GEOMETRI]\n - 3D DNA (Biologi/Genetika): [ANIMASI_3D_DNA]\n - 2D Gelombang (Fisika/Suara): <div class="anim-physics-wave"><div class="anim-physics-wave-transverse"></div></div>\n - 2D Teorema Pythagoras (Matematika Segitiga): <div class="anim-pythagoras-container"></div>\n - 2D Grafik Kuadrat (Fungsi Parabola): <div class="anim-parabola-container"><div class="anim-axis-x"></div><div class="anim-axis-y"></div><div class="anim-parabola"></div></div>\n - 2D Bandul/Pendulum (Fisika Mekanik): <div class="anim-pendulum-container"><div class="anim-pendulum"><div class="anim-pendulum-string"></div><div class="anim-pendulum-bob"></div></div></div>\n - 2D Informatika/Algoritma/Sorting: <div class="anim-sorting-container"><div class="anim-sort-bar b1" data-val="64"></div><div class="anim-sort-bar b2" data-val="34"></div><div class="anim-sort-bar b3" data-val="90"></div><div class="anim-sort-bar b4" data-val="12"></div><div class="anim-sort-bar b5" data-val="22"></div></div>\n - 2D Informatika/Koding/Terminal: <div class="anim-informatics-terminal"><div class="anim-term-header"><div class="anim-term-dot red"></div><div class="anim-term-dot yel"></div><div class="anim-term-dot grn"></div></div><div class="anim-term-body"><div class="anim-term-line anim-term-line1">> Initialize Module...</div><div class="anim-term-line anim-term-line2">> Compiling Data...</div><div class="anim-term-line anim-term-line3">> Execution Successful! <span class="anim-term-cursor"></span></div></div></div>\nSekali lagi, tempatkan tag animasi tersebut HANYA SATU KALI jika topiknya benar-benar cocok.`;
       
-      const result = await model.generateContent(prompt);
-      let text = result.response.text();
+      let text = await callGeminiAPI(prompt, systemInstruction);
       
       if (text) {
          text = text.replace(/```html\n?/gi, '').replace(/```\n?/g, '');
@@ -1574,7 +1604,7 @@ const SummarizerView = () => {
 
     } catch (err) {
       console.error("AI Summary Error:", err);
-      setError(`Gagal terhubung ke AI. Pastikan API Key valid. Alasan: ${err.message}`);
+      setError(`${err.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -1585,19 +1615,10 @@ const SummarizerView = () => {
     setQuizError('');
     
     try {
-       if (!GEMINI_API_KEY) { throw new Error("API Key kosong."); }
-
-       const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-       const model = genAI.getGenerativeModel({ 
-           model: "gemini-1.5-flash",
-           systemInstruction: `Anda adalah guru ahli yang membuat soal evaluasi berkualitas. Anda HARUS mengembalikan data HANYA dalam format JSON array murni tanpa dibungkus markdown apapun. Format JSON wajib seperti ini:\n[\n  {\n    "question": "Pertanyaan soal disini",\n    "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],\n    "correctIndex": 0,\n    "explanation": "Penjelasan detail dan rasional mengapa opsi tersebut benar."\n  }\n]\nPerhatikan: correctIndex adalah angka index (0-3) dari jawaban yang benar.`,
-           generationConfig: { responseMimeType: "application/json" } // Memaksa format JSON
-       });
-
+       const systemInstruction = `Anda adalah guru ahli yang membuat soal evaluasi berkualitas. Anda HARUS mengembalikan data HANYA dalam format JSON array murni tanpa dibungkus markdown apapun. Format JSON wajib seperti ini:\n[\n  {\n    "question": "Pertanyaan soal disini",\n    "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],\n    "correctIndex": 0,\n    "explanation": "Penjelasan detail dan rasional mengapa opsi tersebut benar."\n  }\n]\nPerhatikan: correctIndex adalah angka index (0-3) dari jawaban yang benar.`;
        const prompt = `Buatkan kuis pilihan ganda berjumlah persis 5 soal berdasarkan topik: "${topicInput}". Kuis ini harus berstandar pendidikan kurikulum Indonesia, berkualitas tinggi, dan menguji pemahaman mendalam.`;
 
-       const result = await model.generateContent(prompt);
-       let text = result.response.text();
+       let text = await callGeminiAPI(prompt, systemInstruction, "application/json");
        
        text = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
        const qData = JSON.parse(text);
@@ -1657,6 +1678,7 @@ const SummarizerView = () => {
 
       <Card className="p-6">
         <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-3">Topik, Pertanyaan, atau Teks Materi</label>
+        
         <textarea 
           value={topicInput}
           onChange={(e) => setTopicInput(e.target.value)}
