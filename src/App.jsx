@@ -8,6 +8,11 @@ import {
 } from 'lucide-react';
 
 // =====================================================================
+// 0. IMPORT SDK AI GOOGLE RESMI
+// =====================================================================
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+// =====================================================================
 // 1. INISIALISASI FIREBASE
 // =====================================================================
 import { initializeApp } from 'firebase/app';
@@ -1511,77 +1516,66 @@ const SummarizerView = () => {
   const [showExplanation, setShowExplanation] = useState(false);
   const [quizError, setQuizError] = useState('');
 
-  // =========================================================================
-  // 🚨 LANGKAH WAJIB UNTUK SOBAT ELGO DI VS CODE 🚨
-  // =========================================================================
-  // HAPUS teks "GANTI_SAYA_DI_VSCODE" di bawah ini beserta tanda kutipnya, 
-  // lalu ganti dengan persis teks berikut:
-  // import.meta.env.VITE_GEMINI_API_KEY
-  //
-  // Hasil akhirnya di VS Code kamu harus persis seperti ini:
-  // const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-  // =========================================================================
-  const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY; 
-  // =========================================================================
-
-  // FUNGSI INTI AI: AUTO-FALLBACK MODEL (ANTI ERROR 404)
+  // FUNGSI INTI AI DENGAN "MODE DETEKTIF KUNCI"
   const callGeminiAPI = async (promptText, systemInstruction, responseMimeType = "text/plain") => {
     
-    if (GEMINI_API_KEY === "GANTI_SAYA_DI_VSCODE") {
-        throw new Error("🚨 KODE BELUM DIUBAH! Buka App.jsx di VS Code, cari teks 'GANTI_SAYA_DI_VSCODE', lalu ganti dengan: import.meta.env.VITE_GEMINI_API_KEY");
+    // Memanggil API Key langsung dari Vite environment
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+    if (!apiKey) {
+        throw new Error("🚨 KUNCI KOSONG: Variabel VITE_GEMINI_API_KEY tidak ditemukan di Netlify.");
     }
 
-    if (!GEMINI_API_KEY) {
-        throw new Error("🚨 Kunci API tidak terbaca. Pastikan Environment Variable VITE_GEMINI_API_KEY sudah diisi di menu Settings Netlify.");
+    // MODE DETEKTIF: Menyembunyikan sebagian besar kunci tapi memperlihatkan awalnya
+    const maskedKey = apiKey.substring(0, 10) + "...";
+
+    // Pengecekan Kunci Firebase
+    // AIzaSyBjpq... adalah kunci Firebase kamu yang ada di atas
+    if (apiKey.includes("BjpqMOM") || apiKey.includes("AIzaSyBjpq")) {
+         throw new Error(`🚨 TERCIDUK! Netlify masih membaca Kunci Firebase kamu (${maskedKey}). Tolong ganti isian VITE_GEMINI_API_KEY di Netlify dengan kunci dari AI Studio!`);
     }
 
-    // Daftar model AI
-    const models = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.0-pro"];
-    let lastErrorMsg = "";
+    // Hanya menggunakan satu model terbaru agar lebih cepat
+    const modelName = "gemini-1.5-flash";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-    for (let i = 0; i < models.length; i++) {
-        const modelName = models[i];
-        try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
+    try {
+        const payload = {
+            contents: [{ role: "user", parts: [{ text: promptText }] }],
+        };
 
-            const payload = {
-                contents: [{ role: "user", parts: [{ text: promptText }] }],
-            };
-
-            if (systemInstruction) {
-                payload.systemInstruction = { parts: [{ text: systemInstruction }] };
-            }
-
-            if (responseMimeType === "application/json") {
-                payload.generationConfig = { responseMimeType: "application/json" };
-            }
-
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error?.message || `Ditolak oleh model ${modelName}`);
-            }
-
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (text) {
-                return text; 
-            } else {
-                throw new Error("Respons AI kosong.");
-            }
-
-        } catch (err) {
-            console.warn(`[Peringatan] Gagal mengakses ${modelName}. Mencoba model lain...`);
-            lastErrorMsg = err.message;
-            if (i === models.length - 1) {
-                throw new Error(`Semua model AI gagal. Pastikan API Key Valid dari AI Studio. Detail: ${lastErrorMsg}`);
-            }
+        if (systemInstruction) {
+            payload.systemInstruction = { parts: [{ text: systemInstruction }] };
         }
+
+        if (responseMimeType === "application/json") {
+            payload.generationConfig = { responseMimeType: "application/json" };
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            if (response.status === 404) {
+               throw new Error(`🚨 ERROR 404: Kunci yang dipakai aplikasi saat ini adalah (${maskedKey}). Google menolak kunci ini karena fitur AI Generative Language API tidak aktif di kunci tersebut. Cek kembali isian variabel di Netlify!`);
+            }
+            throw new Error(data.error?.message || `Gagal API: ${response.status}`);
+        }
+
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+            return text; 
+        } else {
+            throw new Error("Respons AI kosong.");
+        }
+
+    } catch (err) {
+        throw err;
     }
   };
 
