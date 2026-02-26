@@ -1008,20 +1008,51 @@ const SummarizerView = () => {
   const [quizError, setQuizError] = useState('');
 
   // =========================================================================
-  // KUNCI API AI GEMINI (MURNI MEMBACA DARI ENV HOSTING)
-  // Kunci lama yang bocor SUDAH DIHAPUS TOTAL dari file ini.
+  // FUNGSI API OPENROUTER (MODEL ARCEE-AI TRINITY GRATIS)
   // =========================================================================
-  const getApiKey = () => {
+  const callOpenRouterAPI = async (promptText, systemInstruction) => {
+    let apiKey = "";
     try {
-      if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
-        return import.meta.env.VITE_GEMINI_API_KEY;
-      }
-    } catch (e) {}
-    return "AIzaSyBYC16tfGug3oLxUAAJ2atlb65GANwwbb8";
+        // eslint-disable-next-line
+        apiKey = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_OPENROUTER_API_KEY : "";
+    } catch(e) {}
+
+    if (!apiKey) {
+        throw new Error("🚨 Kunci API Kosong. Variabel VITE_OPENROUTER_API_KEY belum terdeteksi di Vercel. Pastikan sudah di-save dan di-Redeploy!");
+    }
+
+    try {
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "HTTP-Referer": window.location.origin || "https://telago.app",
+                "X-Title": "TELAGO App",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: "arcee-ai/trinity-large-preview:free", 
+                messages: [
+                    { role: "system", content: systemInstruction },
+                    { role: "user", content: promptText }
+                ]
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(`OpenRouter Error: ${data.error?.message || response.statusText}`);
+        }
+
+        const text = data.choices?.[0]?.message?.content;
+        if (text) return text;
+        throw new Error("Respons AI kosong.");
+
+    } catch (err) {
+        throw err;
+    }
   };
-  
-  const GEMINI_API_KEY = getApiKey();
-  // =========================================================================
 
   const generateSummary = async () => {
     if (!topicInput.trim()) return;
@@ -1031,42 +1062,52 @@ const SummarizerView = () => {
     setQuizStatus('idle'); 
 
     try {
-      if (!GEMINI_API_KEY) {
-         setError("🚨 SISTEM HOSTING GAGAL BACA KUNCI: Variabel VITE_GEMINI_API_KEY belum terdeteksi. Pastikan kamu sudah menaruh KUNCI BARU di pengaturan Vercel dan sudah klik 'Redeploy'.");
-         setIsLoading(false);
-         return;
-      }
+      const systemInstruction = `Anda adalah ELGO, asisten AI edukatif dari TELAGO. Anda AHLI dalam menjelaskan materi secara relevan, LENGKAP, DETAIL, namun PADAT. 
+      ATURAN MUTLAK:
+      1. KEMBALIKAN DALAM FORMAT HTML MURNI (Gunakan <h3>, <p>, <ul>, <li>, <b>). JANGAN PERNAH gunakan Markdown (\`\`\`html) atau (***) atau (###).
+      2. RUMUS MATEMATIKA: Wajib gunakan simbol asli (seperti x², √, Σ, +, -). Jangan gunakan pagar (#) atau bintang (*). Jika ada rumus penting, bungkus dengan <div class="formula-box">RUMUS</div>.
+      3. GUNAKAN EMOTIKON yang relevan di setiap paragraf atau poin list (Contoh: 🌍, 🚀, 💡, 🔬).
+      4. FITUR STABILO: Anda WAJIB memberikan highlight kuning menggunakan tag <mark>kata penting</mark>. JUMLAHNYA HARUS PERSIS 5 SAMPAI 6 HIGHLIGHT di seluruh teks. Jangan kurang, jangan lebih!
+      5. ANIMASI (SANGAT KETAT!): Sisipkan MAKSIMAL SATU (1) TAG ANIMASI HANYA JIKA topik BENAR-BENAR COCOK 100%.
+         - JIKA TOPIK ADALAH SEJARAH NEGARA (cth: Indonesia Merdeka), ILMU SOSIAL, EKONOMI, BAHASA, ATAU BIOLOGI PENCERNAAN: DILARANG KERAS MENGGUNAKAN ANIMASI BUMI ATAU APAPUN!
+         - [ANIMASI_3D_EARTH] HANYA BOLEH dipakai untuk topik Geografi Fisik planet bumi/struktur bumi. BUKAN UNTUK SEJARAH/NEGARA!
+         - Pilihan Animasi 3D Lainnya: [ANIMASI_3D_ATOM] (Kimia/Fisika), [ANIMASI_3D_SOLAR] (Tata Surya), [ANIMASI_3D_GEOMETRI] (Matematika Ruang), [ANIMASI_3D_DNA] (Biologi Gen), [ANIMASI_3D_MOLECULE] (Senyawa), [ANIMASI_3D_CELL] (Biologi Sel), [ANIMASI_3D_GRAVITY] (Fisika Gravitasi).
+         - Pilihan Animasi 2D: [ANIMASI_2D_WAVE] (Fisika Gelombang), [ANIMASI_2D_PARABOLA] (Matematika Kuadrat), [ANIMASI_2D_PENDULUM] (Bandul), [ANIMASI_2D_SORTING] (Algoritma), [ANIMASI_2D_TERMINAL] (Coding), [ANIMASI_2D_PYTHAGORAS] (Segitiga Siku).`;
 
-      // Menggunakan SDK Resmi @google/generative-ai
-      const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash",
-        systemInstruction: "Anda adalah ELGO, asisten AI dari TELAGO. Jelaskan materi dengan gaya interaktif dan profesional. Gunakan HTML murni. Wajib gunakan <div class=\"formula-box\"> untuk rumus matematika. Wajib selektif dan pintar dalam memilih animasi, jangan pasang animasi yang salah konteks atau tidak relevan."
-      });
-
-      const prompt = `Tolong ringkas dan jelaskan materi/topik berikut secara komprehensif:\n\n${topicInput}\n\nInstruksi Format WAJIB:\n1. Output HARUS berupa format HTML murni yang rapi (gunakan <h3>, <p>, <ul>, <li>, <b>). JANGAN gunakan markdown (\`\`\`).\n2. FITUR STABILO KUNING: Anda WAJIB menggunakan tag HTML <mark> untuk men-highlight/stabilo kata-kata kunci. PASTIKAN ADA PERSIS 5 SAMPAI 6 TAG <mark> di dalam teks penjelasanmu! (Contoh: <mark>Fakta</mark>).\n3. RUMUS/PERSAMAAN MATEMATIKA: WAJIB gunakan <div class="formula-box">RUMUS ATAU PERSAMAAN DISINI</div> agar terlihat elegan dan profesional. Gunakan simbol matematika yang tepat (seperti ∑, √, ±, ², ³).\n4. ANIMASI: SANGAT PENTING! HANYA sisipkan SATU animasi JIKA BENAR-BENAR SANGAT RELEVAN DENGAN TOPIK. JIKA TOPIK TIDAK RELEVAN SAMA SEKALI (Contoh: Ekonomi, Sastra, Sosial, dll), DILARANG KERAS MEMASANG ANIMASI APAPUN.\n Pilihan Animasi (pilih 1 yang paling akurat):\n - 3D Struktur Atom (Kimia/Fisika Kuantum): [ANIMASI_3D_ATOM]\n - 3D Senyawa/Molekul H2O (Kimia Dasar): [ANIMASI_3D_MOLEKUL]\n - 3D Tata Surya (Astronomi): [ANIMASI_3D_TATA_SURYA]\n - 3D Bumi/Globe (Geografi/Sejarah Global): [ANIMASI_3D_BUMI]\n - 3D Geometri (Matematika Ruang): [ANIMASI_3D_GEOMETRI]\n - 3D DNA (Biologi/Genetika): [ANIMASI_3D_DNA]\n - 2D Gelombang (Fisika/Suara): <div class="anim-physics-wave"><div class="anim-physics-wave-transverse"></div></div>\n - 2D Teorema Pythagoras (Matematika Segitiga): <div class="anim-pythagoras-container"></div>\n - 2D Grafik Kuadrat (Fungsi Parabola): <div class="anim-parabola-container"><div class="anim-axis-x"></div><div class="anim-axis-y"></div><div class="anim-parabola"></div></div>\n - 2D Bandul/Pendulum (Fisika Mekanik): <div class="anim-pendulum-container"><div class="anim-pendulum"><div class="anim-pendulum-string"></div><div class="anim-pendulum-bob"></div></div></div>\n - 2D Informatika/Algoritma/Sorting: <div class="anim-sorting-container"><div class="anim-sort-bar b1" data-val="64"></div><div class="anim-sort-bar b2" data-val="34"></div><div class="anim-sort-bar b3" data-val="90"></div><div class="anim-sort-bar b4" data-val="12"></div><div class="anim-sort-bar b5" data-val="22"></div></div>\n - 2D Informatika/Koding/Terminal: <div class="anim-informatics-terminal"><div class="anim-term-header"><div class="anim-term-dot red"></div><div class="anim-term-dot yel"></div><div class="anim-term-dot grn"></div></div><div class="anim-term-body"><div class="anim-term-line anim-term-line1">> Initialize Module...</div><div class="anim-term-line anim-term-line2">> Compiling Data...</div><div class="anim-term-line anim-term-line3">> Execution Successful! <span class="anim-term-cursor"></span></div></div></div>\nSekali lagi, tempatkan tag animasi tersebut HANYA SATU KALI jika topiknya benar-benar cocok.`;
+      const prompt = `Tolong ringkas dan jelaskan materi/topik berikut secara komprehensif:\n\n${topicInput}`;
       
-      const result = await model.generateContent(prompt);
-      let text = result.response.text();
+      let text = await callOpenRouterAPI(prompt, systemInstruction);
       
       if (text) {
+         // Bersihkan markdown nakal
          text = text.replace(/```html\n?/gi, '').replace(/```\n?/g, '');
+         
+         // Replace Tag 3D dengan Iframe Asli
          text = text.replace(/\[ANIMASI_3D_ATOM\]/gi, get3DIframe('atom'));
-         text = text.replace(/\[ANIMASI_3D_TATA_SURYA\]/gi, get3DIframe('solar'));
+         text = text.replace(/\[ANIMASI_3D_SOLAR\]/gi, get3DIframe('solar'));
+         text = text.replace(/\[ANIMASI_3D_TATA_SURYA\]/gi, get3DIframe('solar')); // Fallback just in case
          text = text.replace(/\[ANIMASI_3D_GEOMETRI\]/gi, get3DIframe('geometry'));
          text = text.replace(/\[ANIMASI_3D_DNA\]/gi, get3DIframe('dna'));
          text = text.replace(/\[ANIMASI_3D_MOLEKUL\]/gi, get3DIframe('molecule'));
+         text = text.replace(/\[ANIMASI_3D_MOLECULE\]/gi, get3DIframe('molecule'));
          text = text.replace(/\[ANIMASI_3D_BUMI\]/gi, get3DIframe('earth'));
+         text = text.replace(/\[ANIMASI_3D_EARTH\]/gi, get3DIframe('earth'));
+         text = text.replace(/\[ANIMASI_3D_CELL\]/gi, get3DIframe('cell'));
+         text = text.replace(/\[ANIMASI_3D_GRAVITY\]/gi, get3DIframe('gravity'));
+         
+         // Replace Tag 2D dengan Inline HTML/SVG Asli yang Anti-Error
+         text = text.replace(/\[ANIMASI_2D_WAVE\]/gi, get2DAnim('wave'));
+         text = text.replace(/\[ANIMASI_2D_PARABOLA\]/gi, get2DAnim('parabola'));
+         text = text.replace(/\[ANIMASI_2D_PENDULUM\]/gi, get2DAnim('pendulum'));
+         text = text.replace(/\[ANIMASI_2D_PYTHAGORAS\]/gi, get2DAnim('pythagoras'));
+         text = text.replace(/\[ANIMASI_2D_TERMINAL\]/gi, get2DAnim('terminal'));
+         text = text.replace(/\[ANIMASI_2D_SORTING\]/gi, get2DAnim('sorting'));
       }
       setSummaryResult(text || 'Tidak ada penjelasan yang dihasilkan.');
 
     } catch (err) {
       console.error("AI Summary Error:", err);
-      if (err.message.includes("403") || err.message.includes("404")) {
-         setError("🚨 KUNCI MATI/TIDAK VALID: Google menolak kuncimu. Pastikan kamu sudah membuat API Key yang BARU dari aistudio.google.com dan masukkan ke Vercel.");
-      } else {
-         setError(`Terjadi kesalahan AI: ${err.message}`);
-      }
+      setError(`Terjadi kesalahan AI: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -1077,19 +1118,11 @@ const SummarizerView = () => {
     setQuizError('');
     
     try {
-       if (!GEMINI_API_KEY) { throw new Error("API Key kosong di Hosting Vercel."); }
+       const systemInstruction = `Anda adalah guru ahli yang membuat soal evaluasi berkualitas. Anda HARUS mengembalikan data HANYA dalam format JSON array murni tanpa dibungkus markdown apapun. Format JSON wajib seperti ini:\n[\n  {\n    "question": "Pertanyaan soal disini",\n    "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],\n    "correctIndex": 0,\n    "explanation": "Penjelasan detail dan rasional mengapa opsi tersebut benar."\n  }\n]\nPerhatikan: correctIndex adalah angka index (0-3) dari jawaban yang benar.`;
+       
+       const prompt = `Berikut adalah ringkasan materi yang baru saja dipelajari:\n\n"""\n${summaryResult}\n"""\n\nBerdasarkan materi di atas, buatkan kuis pilihan ganda berjumlah persis 5 soal.\nSyarat Mutlak:\n1. Fokus dan sangat relevan dengan isi materi di atas (tidak melenceng ke topik luar).\n2. Uji pemahaman mendalam dan nalar analitis.\n3. JANGAN sekadar menyalin kalimat secara persis dari materi (jangan plek ketiplek/hanya menghafal).\n4. Berstandar pendidikan dan berkualitas tinggi.`;
 
-       const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-       const model = genAI.getGenerativeModel({ 
-           model: "gemini-1.5-flash",
-           systemInstruction: `Anda adalah guru ahli yang membuat soal evaluasi berkualitas. Anda HARUS mengembalikan data HANYA dalam format JSON array murni tanpa dibungkus markdown apapun. Format JSON wajib seperti ini:\n[\n  {\n    "question": "Pertanyaan soal disini",\n    "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],\n    "correctIndex": 0,\n    "explanation": "Penjelasan detail dan rasional mengapa opsi tersebut benar."\n  }\n]\nPerhatikan: correctIndex adalah angka index (0-3) dari jawaban yang benar.`,
-           generationConfig: { responseMimeType: "application/json" } // Memaksa format JSON agar terhindar dari Error Parsing
-       });
-
-       const prompt = `Buatkan kuis pilihan ganda berjumlah persis 5 soal berdasarkan topik: "${topicInput}". Kuis ini harus berstandar pendidikan kurikulum Indonesia, berkualitas tinggi, dan menguji pemahaman mendalam.`;
-
-       const result = await model.generateContent(prompt);
-       let text = result.response.text();
+       let text = await callOpenRouterAPI(prompt, systemInstruction);
        
        // Pembersihan JSON yang Anti-Error
        text = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
