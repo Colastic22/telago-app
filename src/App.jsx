@@ -1512,26 +1512,37 @@ const SummarizerView = () => {
   const [quizError, setQuizError] = useState('');
 
   // =========================================================================
-  // FUNGSI INTI AI: AUTO-FALLBACK MODEL (ANTI ERROR 404)
+  // 🚨 LANGKAH WAJIB UNTUK SOBAT ELGO DI VS CODE 🚨
   // =========================================================================
+  // HAPUS teks "GANTI_SAYA_DI_VSCODE" di bawah ini beserta tanda kutipnya, 
+  // lalu ganti dengan persis teks berikut:
+  // import.meta.env.VITE_GEMINI_API_KEY
+  //
+  // Hasil akhirnya di VS Code kamu harus persis seperti ini:
+  // const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+  // =========================================================================
+  const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY; 
+  // =========================================================================
+
+  // FUNGSI INTI AI: AUTO-FALLBACK MODEL (ANTI ERROR 404)
   const callGeminiAPI = async (promptText, systemInstruction, responseMimeType = "text/plain") => {
     
-    // PERBAIKAN: Memaksa Vite membaca variabel secara langsung (Wajib untuk Netlify)
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-    if (!apiKey) {
-        throw new Error("Kunci API (VITE_GEMINI_API_KEY) tidak ditemukan. Pastikan kamu sudah mengatur Environment Variables di Netlify dan melakukan 'Clear cache and deploy site'.");
+    if (GEMINI_API_KEY === import.meta.env.VITE_GEMINI_API_KEY) {
+        throw new Error("🚨 KODE BELUM DIUBAH! Buka App.jsx di VS Code, cari teks 'GANTI_SAYA_DI_VSCODE', lalu ganti dengan: import.meta.env.VITE_GEMINI_API_KEY");
     }
 
-    // Daftar model yang akan dicoba berurutan dari yang paling baru
-    const models = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.0-pro", "gemini-pro"];
+    if (!GEMINI_API_KEY) {
+        throw new Error("🚨 Kunci API tidak terbaca. Pastikan Environment Variable VITE_GEMINI_API_KEY sudah diisi di menu Settings Netlify.");
+    }
+
+    // Daftar model AI
+    const models = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.0-pro"];
     let lastErrorMsg = "";
 
     for (let i = 0; i < models.length; i++) {
         const modelName = models[i];
         try {
-            // Kita menggunakan Endpoint v1 API murni (bukan SDK) karena paling stabil di semua Hosting
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
 
             const payload = {
                 contents: [{ role: "user", parts: [{ text: promptText }] }],
@@ -1559,17 +1570,16 @@ const SummarizerView = () => {
 
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
             if (text) {
-                return text; // Berhasil! Kembalikan hasil dan hentikan pencarian model
+                return text; 
             } else {
                 throw new Error("Respons AI kosong.");
             }
 
         } catch (err) {
-            console.warn(`[Peringatan AI] Gagal mengakses model ${modelName}. Mencoba model alternatif...`);
+            console.warn(`[Peringatan] Gagal mengakses ${modelName}. Mencoba model lain...`);
             lastErrorMsg = err.message;
-            // Jika ini sudah model terakhir dan tetap gagal, lempar error ke layar utama
             if (i === models.length - 1) {
-                throw new Error(`Semua model AI gagal diakses. Pastikan API Key valid. Detail: ${lastErrorMsg}`);
+                throw new Error(`Semua model AI gagal. Pastikan API Key Valid dari AI Studio. Detail: ${lastErrorMsg}`);
             }
         }
     }
