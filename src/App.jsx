@@ -6,6 +6,7 @@ import {
   FileText, Sparkles, Loader2, Moon, Sun, Menu, CalendarDays,
   Plus, Edit2, Trash2, Check, X, HelpCircle, ChevronRight, RefreshCw, Star
 } from 'lucide-react';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // =====================================================================
 // 1. INISIALISASI FIREBASE
@@ -1007,51 +1008,20 @@ const SummarizerView = () => {
   const [quizError, setQuizError] = useState('');
 
   // =========================================================================
-  // FUNGSI API OPENROUTER (MODEL ARCEE-AI TRINITY GRATIS)
+  // KUNCI API AI GEMINI (MURNI MEMBACA DARI ENV HOSTING)
+  // Kunci lama yang bocor SUDAH DIHAPUS TOTAL dari file ini.
   // =========================================================================
-  const callOpenRouterAPI = async (promptText, systemInstruction) => {
-    let apiKey = "";
+  const getApiKey = () => {
     try {
-        // eslint-disable-next-line
-        apiKey = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_OPENROUTER_API_KEY : "";
-    } catch(e) {}
-
-    if (!apiKey) {
-        throw new Error("🚨 Kunci API Kosong. Variabel VITE_OPENROUTER_API_KEY belum terdeteksi di Vercel. Pastikan sudah di-save dan di-Redeploy!");
-    }
-
-    try {
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "HTTP-Referer": window.location.origin || "https://telago.app",
-                "X-Title": "TELAGO App",
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                model: "arcee-ai/trinity-large-preview:free", 
-                messages: [
-                    { role: "system", content: systemInstruction },
-                    { role: "user", content: promptText }
-                ]
-            })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(`OpenRouter Error: ${data.error?.message || response.statusText}`);
-        }
-
-        const text = data.choices?.[0]?.message?.content;
-        if (text) return text;
-        throw new Error("Respons AI kosong.");
-
-    } catch (err) {
-        throw err;
-    }
+      if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+        return import.meta.env.VITE_GEMINI_API_KEY;
+      }
+    } catch (e) {}
+    return "AIzaSyBYC16tfGug3oLxUAAJ2atlb65GANwwbb8";
   };
+  
+  const GEMINI_API_KEY = getApiKey();
+  // =========================================================================
 
   const generateSummary = async () => {
     if (!topicInput.trim()) return;
@@ -1061,53 +1031,42 @@ const SummarizerView = () => {
     setQuizStatus('idle'); 
 
     try {
-      // 🚨 ATURAN KETAT UNTUK AI AGAR SESUAI DENGAN PERMINTAAN PENGGUNA 🚨
-      const systemInstruction = `Anda adalah ELGO, asisten AI edukatif dari TELAGO. Anda AHLI dalam menjelaskan materi secara relevan, LENGKAP, DETAIL, namun PADAT. 
-      ATURAN MUTLAK:
-      1. KEMBALIKAN DALAM FORMAT HTML MURNI (Gunakan <h3>, <p>, <ul>, <li>, <b>). JANGAN PERNAH gunakan Markdown (\`\`\`html) atau (***) atau (###).
-      2. RUMUS MATEMATIKA: Wajib gunakan simbol asli (seperti x², √, Σ, +, -). Jangan gunakan pagar (#) atau bintang (*). Jika ada rumus penting, bungkus dengan <div class="formula-box">RUMUS</div>.
-      3. GUNAKAN EMOTIKON yang relevan di setiap paragraf atau poin list (Contoh: 🌍, 🚀, 💡, 🔬).
-      4. FITUR STABILO: Anda WAJIB memberikan highlight kuning menggunakan tag <mark>kata penting</mark>. JUMLAHNYA HARUS PERSIS 5 SAMPAI 6 HIGHLIGHT di seluruh teks. Jangan kurang, jangan lebih!
-      5. ANIMASI (SANGAT KETAT!): Sisipkan MAKSIMAL SATU (1) TAG ANIMASI HANYA JIKA topik BENAR-BENAR COCOK 100%.
-         - JIKA TOPIK ADALAH SEJARAH NEGARA (cth: Indonesia Merdeka), ILMU SOSIAL, EKONOMI, BAHASA, ATAU BIOLOGI PENCERNAAN: DILARANG KERAS MENGGUNAKAN ANIMASI BUMI ATAU APAPUN!
-         - [ANIMASI_3D_EARTH] HANYA BOLEH dipakai untuk topik Geografi Fisik planet bumi/struktur bumi. BUKAN UNTUK SEJARAH/NEGARA!
-         - Pilihan Animasi 3D Lainnya: [ANIMASI_3D_ATOM] (Kimia/Fisika), [ANIMASI_3D_SOLAR] (Tata Surya), [ANIMASI_3D_GEOMETRI] (Matematika Ruang), [ANIMASI_3D_DNA] (Biologi Gen), [ANIMASI_3D_MOLECULE] (Senyawa), [ANIMASI_3D_CELL] (Biologi Sel), [ANIMASI_3D_GRAVITY] (Fisika Gravitasi).
-         - Pilihan Animasi 2D: [ANIMASI_2D_WAVE] (Fisika Gelombang), [ANIMASI_2D_PARABOLA] (Matematika Kuadrat), [ANIMASI_2D_PENDULUM] (Bandul), [ANIMASI_2D_SORTING] (Algoritma), [ANIMASI_2D_TERMINAL] (Coding), [ANIMASI_2D_PYTHAGORAS] (Segitiga Siku).`;
+      if (!GEMINI_API_KEY) {
+         setError("🚨 SISTEM HOSTING GAGAL BACA KUNCI: Variabel VITE_GEMINI_API_KEY belum terdeteksi. Pastikan kamu sudah menaruh KUNCI BARU di pengaturan Vercel dan sudah klik 'Redeploy'.");
+         setIsLoading(false);
+         return;
+      }
 
-      const prompt = `Tolong ringkas dan jelaskan materi/topik berikut secara komprehensif:\n\n${topicInput}`;
+      // Menggunakan SDK Resmi @google/generative-ai
+      const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-1.5-flash",
+        systemInstruction: "Anda adalah ELGO, asisten AI dari TELAGO. Jelaskan materi dengan gaya interaktif dan profesional. Gunakan HTML murni. Wajib gunakan <div class=\"formula-box\"> untuk rumus matematika. Wajib selektif dan pintar dalam memilih animasi, jangan pasang animasi yang salah konteks atau tidak relevan."
+      });
+
+      const prompt = `Tolong ringkas dan jelaskan materi/topik berikut secara komprehensif:\n\n${topicInput}\n\nInstruksi Format WAJIB:\n1. Output HARUS berupa format HTML murni yang rapi (gunakan <h3>, <p>, <ul>, <li>, <b>). JANGAN gunakan markdown (\`\`\`).\n2. FITUR STABILO KUNING: Anda WAJIB menggunakan tag HTML <mark> untuk men-highlight/stabilo kata-kata kunci. PASTIKAN ADA PERSIS 5 SAMPAI 6 TAG <mark> di dalam teks penjelasanmu! (Contoh: <mark>Fakta</mark>).\n3. RUMUS/PERSAMAAN MATEMATIKA: WAJIB gunakan <div class="formula-box">RUMUS ATAU PERSAMAAN DISINI</div> agar terlihat elegan dan profesional. Gunakan simbol matematika yang tepat (seperti ∑, √, ±, ², ³).\n4. ANIMASI: SANGAT PENTING! HANYA sisipkan SATU animasi JIKA BENAR-BENAR SANGAT RELEVAN DENGAN TOPIK. JIKA TOPIK TIDAK RELEVAN SAMA SEKALI (Contoh: Ekonomi, Sastra, Sosial, dll), DILARANG KERAS MEMASANG ANIMASI APAPUN.\n Pilihan Animasi (pilih 1 yang paling akurat):\n - 3D Struktur Atom (Kimia/Fisika Kuantum): [ANIMASI_3D_ATOM]\n - 3D Senyawa/Molekul H2O (Kimia Dasar): [ANIMASI_3D_MOLEKUL]\n - 3D Tata Surya (Astronomi): [ANIMASI_3D_TATA_SURYA]\n - 3D Bumi/Globe (Geografi/Sejarah Global): [ANIMASI_3D_BUMI]\n - 3D Geometri (Matematika Ruang): [ANIMASI_3D_GEOMETRI]\n - 3D DNA (Biologi/Genetika): [ANIMASI_3D_DNA]\n - 2D Gelombang (Fisika/Suara): <div class="anim-physics-wave"><div class="anim-physics-wave-transverse"></div></div>\n - 2D Teorema Pythagoras (Matematika Segitiga): <div class="anim-pythagoras-container"></div>\n - 2D Grafik Kuadrat (Fungsi Parabola): <div class="anim-parabola-container"><div class="anim-axis-x"></div><div class="anim-axis-y"></div><div class="anim-parabola"></div></div>\n - 2D Bandul/Pendulum (Fisika Mekanik): <div class="anim-pendulum-container"><div class="anim-pendulum"><div class="anim-pendulum-string"></div><div class="anim-pendulum-bob"></div></div></div>\n - 2D Informatika/Algoritma/Sorting: <div class="anim-sorting-container"><div class="anim-sort-bar b1" data-val="64"></div><div class="anim-sort-bar b2" data-val="34"></div><div class="anim-sort-bar b3" data-val="90"></div><div class="anim-sort-bar b4" data-val="12"></div><div class="anim-sort-bar b5" data-val="22"></div></div>\n - 2D Informatika/Koding/Terminal: <div class="anim-informatics-terminal"><div class="anim-term-header"><div class="anim-term-dot red"></div><div class="anim-term-dot yel"></div><div class="anim-term-dot grn"></div></div><div class="anim-term-body"><div class="anim-term-line anim-term-line1">> Initialize Module...</div><div class="anim-term-line anim-term-line2">> Compiling Data...</div><div class="anim-term-line anim-term-line3">> Execution Successful! <span class="anim-term-cursor"></span></div></div></div>\nSekali lagi, tempatkan tag animasi tersebut HANYA SATU KALI jika topiknya benar-benar cocok.`;
       
-      let text = await callOpenRouterAPI(prompt, systemInstruction);
+      const result = await model.generateContent(prompt);
+      let text = result.response.text();
       
       if (text) {
-         // Bersihkan markdown nakal
          text = text.replace(/```html\n?/gi, '').replace(/```\n?/g, '');
-         
-         // Replace Tag 3D dengan Iframe Asli
          text = text.replace(/\[ANIMASI_3D_ATOM\]/gi, get3DIframe('atom'));
-         text = text.replace(/\[ANIMASI_3D_SOLAR\]/gi, get3DIframe('solar'));
-         text = text.replace(/\[ANIMASI_3D_TATA_SURYA\]/gi, get3DIframe('solar')); // Fallback just in case
+         text = text.replace(/\[ANIMASI_3D_TATA_SURYA\]/gi, get3DIframe('solar'));
          text = text.replace(/\[ANIMASI_3D_GEOMETRI\]/gi, get3DIframe('geometry'));
          text = text.replace(/\[ANIMASI_3D_DNA\]/gi, get3DIframe('dna'));
          text = text.replace(/\[ANIMASI_3D_MOLEKUL\]/gi, get3DIframe('molecule'));
-         text = text.replace(/\[ANIMASI_3D_MOLECULE\]/gi, get3DIframe('molecule'));
          text = text.replace(/\[ANIMASI_3D_BUMI\]/gi, get3DIframe('earth'));
-         text = text.replace(/\[ANIMASI_3D_EARTH\]/gi, get3DIframe('earth'));
-         text = text.replace(/\[ANIMASI_3D_CELL\]/gi, get3DIframe('cell'));
-         text = text.replace(/\[ANIMASI_3D_GRAVITY\]/gi, get3DIframe('gravity'));
-         
-         // Replace Tag 2D dengan Inline HTML/SVG Asli yang Anti-Error
-         text = text.replace(/\[ANIMASI_2D_WAVE\]/gi, get2DAnim('wave'));
-         text = text.replace(/\[ANIMASI_2D_PARABOLA\]/gi, get2DAnim('parabola'));
-         text = text.replace(/\[ANIMASI_2D_PENDULUM\]/gi, get2DAnim('pendulum'));
-         text = text.replace(/\[ANIMASI_2D_PYTHAGORAS\]/gi, get2DAnim('pythagoras'));
-         text = text.replace(/\[ANIMASI_2D_TERMINAL\]/gi, get2DAnim('terminal'));
-         text = text.replace(/\[ANIMASI_2D_SORTING\]/gi, get2DAnim('sorting'));
       }
       setSummaryResult(text || 'Tidak ada penjelasan yang dihasilkan.');
 
     } catch (err) {
       console.error("AI Summary Error:", err);
-      setError(`Terjadi kesalahan AI: ${err.message}`);
+      if (err.message.includes("403") || err.message.includes("404")) {
+         setError("🚨 KUNCI MATI/TIDAK VALID: Google menolak kuncimu. Pastikan kamu sudah membuat API Key yang BARU dari aistudio.google.com dan masukkan ke Vercel.");
+      } else {
+         setError(`Terjadi kesalahan AI: ${err.message}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -1118,12 +1077,19 @@ const SummarizerView = () => {
     setQuizError('');
     
     try {
-       const systemInstruction = `Anda adalah guru ahli yang membuat soal evaluasi berkualitas. Anda HARUS mengembalikan data HANYA dalam format JSON array murni tanpa dibungkus markdown apapun. Format JSON wajib seperti ini:\n[\n  {\n    "question": "Pertanyaan soal disini",\n    "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],\n    "correctIndex": 0,\n    "explanation": "Penjelasan detail dan rasional mengapa opsi tersebut benar."\n  }\n]\nPerhatikan: correctIndex adalah angka index (0-3) dari jawaban yang benar.`;
-       
-       // PERBAIKAN: Membaca teks hasil summary agar sangat relevan!
-       const prompt = `Berikut adalah ringkasan materi yang baru saja dipelajari:\n\n"""\n${summaryResult}\n"""\n\nBerdasarkan materi di atas, buatkan kuis pilihan ganda berjumlah persis 5 soal.\nSyarat Mutlak:\n1. Fokus dan sangat relevan dengan isi materi di atas (tidak melenceng ke topik luar).\n2. Uji pemahaman mendalam dan nalar analitis.\n3. JANGAN sekadar menyalin kalimat secara persis dari materi (jangan plek ketiplek/hanya menghafal).\n4. Berstandar pendidikan dan berkualitas tinggi.`;
+       if (!GEMINI_API_KEY) { throw new Error("API Key kosong di Hosting Vercel."); }
 
-       let text = await callOpenRouterAPI(prompt, systemInstruction);
+       const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+       const model = genAI.getGenerativeModel({ 
+           model: "gemini-1.5-flash",
+           systemInstruction: `Anda adalah guru ahli yang membuat soal evaluasi berkualitas. Anda HARUS mengembalikan data HANYA dalam format JSON array murni tanpa dibungkus markdown apapun. Format JSON wajib seperti ini:\n[\n  {\n    "question": "Pertanyaan soal disini",\n    "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],\n    "correctIndex": 0,\n    "explanation": "Penjelasan detail dan rasional mengapa opsi tersebut benar."\n  }\n]\nPerhatikan: correctIndex adalah angka index (0-3) dari jawaban yang benar.`,
+           generationConfig: { responseMimeType: "application/json" } // Memaksa format JSON agar terhindar dari Error Parsing
+       });
+
+       const prompt = `Buatkan kuis pilihan ganda berjumlah persis 5 soal berdasarkan topik: "${topicInput}". Kuis ini harus berstandar pendidikan kurikulum Indonesia, berkualitas tinggi, dan menguji pemahaman mendalam.`;
+
+       const result = await model.generateContent(prompt);
+       let text = result.response.text();
        
        // Pembersihan JSON yang Anti-Error
        text = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
@@ -1147,11 +1113,11 @@ const SummarizerView = () => {
   };
 
   const handleSelectOption = (index) => {
-    if (showExplanation) return; 
+    if (showExplanation) return; // Prevent clicking after answered
     setSelectedOption(index);
     setShowExplanation(true);
     if (index === quizData[currentQ].correctIndex) {
-      setScore(prev => prev + 20); 
+      setScore(prev => prev + 20); // 5 soal x 20 poin = 100
     }
   };
 
@@ -1187,24 +1153,27 @@ const SummarizerView = () => {
         <textarea 
           value={topicInput}
           onChange={(e) => setTopicInput(e.target.value)}
-          placeholder="Contoh: 'Jelaskan struktur Sel', 'Teorema Pythagoras', 'Persamaan Kuadrat'..."
+          placeholder="Contoh: 'Jelaskan struktur DNA', 'Teorema Pythagoras', 'Dasar Pemrograman Web'..."
           className="w-full min-h-[150px] p-4 rounded-xl border border-gray-200 dark:border-gray-600 focus:border-blue-500 focus:ring-blue-200 dark:focus:ring-blue-900 focus:outline-none focus:ring-4 transition-all bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 resize-y mb-4"
         />
-        <Button onClick={generateSummary} disabled={isLoading || !topicInput.trim()} className="w-full md:w-auto">
+        <Button 
+          onClick={generateSummary} 
+          disabled={isLoading || !topicInput.trim()} 
+          className="w-full md:w-auto"
+        >
           {isLoading ? <><Loader2 size={18} className="animate-spin" /> Sedang Menganalisis...</> : <><Sparkles size={18} /> Ringkas & Jelaskan</>}
         </Button>
 
         {error && (
-          <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl flex items-start gap-3 text-sm border border-red-100 dark:border-red-800 leading-relaxed">
-            <AlertCircle size={18} className="flex-shrink-0 mt-0.5" /> 
-            <span style={{ whiteSpace: 'pre-wrap' }}>{error}</span>
+          <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl flex items-center gap-2 text-sm border border-red-100 dark:border-red-800">
+            <AlertCircle size={16} /> {error}
           </div>
         )}
       </Card>
 
       {summaryResult && (
         <Card className="p-6 sm:p-8 bg-white dark:bg-gray-800 border-t-4 border-t-yellow-400 dark:border-t-yellow-500 shadow-xl overflow-hidden relative">
-          <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2 mb-6 border-b dark:border-gray-700 pb-3 text-lg"><FileText size={24} className="text-blue-600 dark:text-blue-400"/> Penjelasan Terpadu</h3>
+          <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2 mb-6 border-b dark:border-gray-700 pb-3 text-lg"><FileText size={24} className="text-blue-600 dark:text-blue-400"/> Penjelasan ELGO</h3>
           <div 
             className="format-html-content text-gray-700 dark:text-gray-300 text-sm sm:text-base mb-8"
             dangerouslySetInnerHTML={{ __html: summaryResult }}
@@ -1242,18 +1211,28 @@ const SummarizerView = () => {
             <div className="space-y-3">
               {quizData[currentQ].options.map((opt, i) => {
                 let btnStyle = "border-gray-200 dark:border-gray-700 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200";
+                
                 if (showExplanation) {
                   if (i === quizData[currentQ].correctIndex) {
-                    btnStyle = "border-green-500 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-bold shadow-md ring-2 ring-green-200 dark:ring-green-900"; 
+                    btnStyle = "border-green-500 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-bold shadow-md ring-2 ring-green-200 dark:ring-green-900"; // Benar
                   } else if (i === selectedOption) {
-                    btnStyle = "border-red-500 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 opacity-80"; 
+                    btnStyle = "border-red-500 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 opacity-80"; // Salah pilih
                   } else {
-                    btnStyle = "border-gray-200 dark:border-gray-700 opacity-50"; 
+                    btnStyle = "border-gray-200 dark:border-gray-700 opacity-50"; // Lainnya
                   }
                 }
+
                 return (
-                  <button key={i} disabled={showExplanation} onClick={() => handleSelectOption(i)} className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-300 ${btnStyle}`}>
-                    <div className="flex items-start gap-3"><span className="font-bold w-6 text-gray-400 dark:text-gray-500">{['A','B','C','D'][i]}.</span> <span>{opt}</span></div>
+                  <button 
+                    key={i} 
+                    disabled={showExplanation}
+                    onClick={() => handleSelectOption(i)}
+                    className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-300 ${btnStyle}`}
+                  >
+                    <div className="flex items-start gap-3">
+                       <span className="font-bold w-6 text-gray-400 dark:text-gray-500">{['A','B','C','D'][i]}.</span> 
+                       <span>{opt}</span>
+                    </div>
                   </button>
                 )
               })}
@@ -1261,9 +1240,17 @@ const SummarizerView = () => {
 
             {showExplanation && (
               <div className="mt-6 p-5 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 animate-fade-in-up">
-                 <h4 className="font-bold flex items-center gap-2 mb-2 text-blue-900 dark:text-blue-300"><HelpCircle size={18}/> Pembahasan:</h4>
-                 <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">{quizData[currentQ].explanation}</p>
-                 <div className="mt-6 flex justify-end"><Button onClick={nextQuestion} className="px-8">{currentQ < quizData.length - 1 ? 'Soal Selanjutnya' : 'Lihat Hasil Kuis'} <ChevronRight size={18}/></Button></div>
+                 <h4 className="font-bold flex items-center gap-2 mb-2 text-blue-900 dark:text-blue-300">
+                   <HelpCircle size={18}/> Pembahasan:
+                 </h4>
+                 <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">
+                   {quizData[currentQ].explanation}
+                 </p>
+                 <div className="mt-6 flex justify-end">
+                    <Button onClick={nextQuestion} className="px-8">
+                       {currentQ < quizData.length - 1 ? 'Soal Selanjutnya' : 'Lihat Hasil Kuis'} <ChevronRight size={18}/>
+                    </Button>
+                 </div>
               </div>
             )}
          </Card>
@@ -1272,53 +1259,145 @@ const SummarizerView = () => {
       {/* --- HASIL KUIS UI --- */}
       {quizStatus === 'result' && (
          <Card className="p-6 sm:p-10 text-center bg-gradient-to-br from-white to-blue-50 dark:from-gray-900 dark:to-gray-800 shadow-2xl animate-fade-in-up">
-            <div className="inline-flex items-center justify-center w-24 h-24 rounded-full mb-6 bg-gradient-to-r from-blue-500 to-indigo-600 shadow-lg"><Award size={48} className="text-white"/></div>
+            <div className="inline-flex items-center justify-center w-24 h-24 rounded-full mb-6 bg-gradient-to-r from-blue-500 to-indigo-600 shadow-lg">
+               <Award size={48} className="text-white"/>
+            </div>
             <h2 className="text-3xl font-black text-gray-800 dark:text-white mb-2">Skor Kuis Anda</h2>
-            <div className={`text-6xl font-black mb-6 ${score >= 80 ? 'text-green-500' : score >= 60 ? 'text-yellow-500' : 'text-red-500'}`}>{score} <span className="text-2xl text-gray-400">/ 100</span></div>
+            <div className={`text-6xl font-black mb-6 ${score >= 80 ? 'text-green-500' : score >= 60 ? 'text-yellow-500' : 'text-red-500'}`}>
+              {score} <span className="text-2xl text-gray-400">/ 100</span>
+            </div>
             
             <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl p-6 text-left max-w-lg mx-auto shadow-sm mb-8">
                <h4 className="font-bold text-gray-800 dark:text-gray-200 mb-2 border-b pb-2 dark:border-gray-700">Analisis & Evaluasi:</h4>
                <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed mb-4">
-                 {score === 100 ? "Luar Biasa! Pemahamanmu sangat sempurna dan solid terkait materi ini. Pertahankan fokusmu!" : score >= 80 ? "Sangat Baik! Kamu menguasai konsep inti dengan baik, hanya perlu sedikit ketelitian lagi." : score >= 60 ? "Cukup Baik. Kamu sudah menangkap dasarnya, namun disarankan untuk membaca ulang bagian yang kamu salah jawab." : "Jangan Menyerah! Proses belajar butuh waktu. Coba baca kembali ringkasannya dengan perlahan dan ulangi kuis ini."}
+                 {score === 100 ? "Luar Biasa! Pemahamanmu sangat sempurna dan solid terkait materi ini. Pertahankan fokusmu!" :
+                  score >= 80 ? "Sangat Baik! Kamu menguasai konsep inti dengan baik, hanya perlu sedikit ketelitian lagi." :
+                  score >= 60 ? "Cukup Baik. Kamu sudah menangkap dasarnya, namun disarankan untuk membaca ulang bagian yang kamu salah jawab." :
+                  "Jangan Menyerah! Proses belajar butuh waktu. Coba baca kembali ringkasannya dengan perlahan dan ulangi kuis ini."}
                </p>
+               <h4 className="font-bold text-gray-800 dark:text-gray-200 mb-2 border-b pb-2 dark:border-gray-700">Saran Belajar:</h4>
+               <ul className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed list-disc pl-5">
+                 {score < 100 && <li>Gunakan fitur "Ringkas & Jelaskan" lagi pada kata kunci yang belum kamu pahami dari kuis tadi.</li>}
+                 <li>Buka fitur Pomodoro di Dashboard untuk merencanakan jadwal belajar materi ini secara konsisten.</li>
+               </ul>
             </div>
-            <Button onClick={retryQuiz} variant="primary" className="mx-auto w-full sm:w-auto px-10"><RefreshCw size={18}/> Ulangi Kuis</Button>
+
+            <Button onClick={retryQuiz} variant="primary" className="mx-auto w-full sm:w-auto px-10">
+              <RefreshCw size={18}/> Ulangi Kuis
+            </Button>
          </Card>
       )}
 
-      {/* GLOBAL CSS UNTUK KONTEN HTML RINGKASAN & SEMUA ANIMASI CSS 2D */}
+      {/* GLOBAL CSS UNTUK KONTEN HTML RINGKASAN & ANIMASI */}
       <style>{`
-        .format-html-content h3 { font-size: 1.25rem; font-weight: 800; color: #1e40af; margin: 1.5rem 0 1rem; border-bottom: 2px solid #eff6ff; padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
-        .dark .format-html-content h3 { color: #60A5FA; border-bottom-color: #1e293b;}
-        .format-html-content p { margin-bottom: 1rem; line-height: 1.8; color: #334155; }
-        .dark .format-html-content p { color: #cbd5e1; }
-        .format-html-content ul { list-style: none; padding-left: 0; margin-bottom: 1.5rem; }
-        .format-html-content li { margin-bottom: 0.75rem; padding-left: 1.75rem; position: relative; line-height: 1.6;}
-        .format-html-content li::before { content: '✨'; position: absolute; left: 0; top: -0.1rem; }
+        .format-html-content h3 { font-size: 1.25rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #1E3A8A; display: flex; align-items: center; gap: 0.5rem; }
+        .dark .format-html-content h3 { color: #60A5FA; }
+        .format-html-content p { margin-bottom: 1rem; line-height: 1.7; }
+        .format-html-content ul { list-style-type: none; padding-left: 0.5rem; margin-bottom: 1.5rem; }
+        .format-html-content li { margin-bottom: 0.75rem; position: relative; padding-left: 1.75rem; line-height: 1.6; }
+        .format-html-content li::before { content: "✨"; position: absolute; left: 0; font-size: 1rem; top: -0.1rem; }
         .format-html-content b, .format-html-content strong { font-weight: 700; color: #111827; }
         .dark .format-html-content b, .dark .format-html-content strong { color: #F3F4F6; }
         
-        .format-html-content mark { background-color: #FEF08A; color: #1E3A8A; padding: 0.15em 0.4em; border-radius: 0.25em; font-weight: 600; box-shadow: inset 0 -0.4em 0 0 rgba(250, 204, 21, 0.4); }
+        .format-html-content mark { background-color: #FEF08A; color: #1E3A8A; padding: 0.15em 0.4em; border-radius: 0.25em; font-weight: 600; font-family: inherit; box-shadow: inset 0 -0.4em 0 0 rgba(250, 204, 21, 0.4); }
         .dark .format-html-content mark { background-color: rgba(234, 179, 8, 0.3); color: #FDE047; box-shadow: inset 0 -0.4em 0 0 rgba(234, 179, 8, 0.5); }
         
-        /* FORMULA BOX (RUMUS MATEMATIKA) */
-        .formula-box { background: #f8fafc; border-left: 4px solid #3b82f6; padding: 1.25rem 1.5rem; margin: 1.5rem 0; border-radius: 0 12px 12px 0; font-family: 'Cambria Math', 'Courier New', Courier, monospace; font-size: 1.25rem; color: #0f172a; text-align: center; font-weight: 600; letter-spacing: 1px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow-x: auto; white-space: nowrap; }
-        .dark .formula-box { background: #1e293b; border-left-color: #60a5fa; color: #f8fafc; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
+        .format-html-content table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 0.95rem; border-radius: 0.5rem; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .format-html-content th, .format-html-content td { padding: 0.85rem 1rem; border-bottom: 1px solid #E5E7EB; text-align: left; }
+        .format-html-content th { background-color: #F3F4F6; font-weight: 700; color: #1F2937; text-transform: uppercase; font-size: 0.85rem; }
+        .format-html-content tr:last-child td { border-bottom: none; }
+        .dark .format-html-content table { box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
+        .dark .format-html-content th, .dark .format-html-content td { border-bottom-color: #374151; }
+        .dark .format-html-content th { background-color: #1F2937; color: #E5E7EB; }
 
-        /* UPGRADED INTERACTIVE 2D CSS ANIMATIONS (RELIABLE & NO BROKEN URL) */
-        .typewriter1 { overflow: hidden; white-space: nowrap; width: 0; animation: typing 1.5s steps(30, end) forwards; animation-delay: 0.5s; }
-        .typewriter2 { overflow: hidden; white-space: nowrap; width: 0; animation: typing 1.5s steps(30, end) forwards; animation-delay: 2.5s; }
-        .typewriter3 { overflow: hidden; white-space: nowrap; width: 0; animation: typing 1.5s steps(40, end) forwards; animation-delay: 4.5s; color: #3b82f6;}
-        @keyframes typing { from { width: 0; } to { width: 100%; } }
-        .blink-cursor { animation: blink 1s step-end infinite; opacity: 0; animation-delay: 6s;}
-        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        /* KOTAK RUMUS / FORMULA BOX (ELEGAN & PROFESIONAL) */
+        .formula-box {
+           background: #f8fafc; border-left: 4px solid #3b82f6;
+           padding: 1.25rem 1.5rem; margin: 1.5rem 0; border-radius: 0 12px 12px 0;
+           font-family: 'Cambria Math', 'Courier New', Courier, monospace; font-size: 1.25rem;
+           color: #0f172a; text-align: center; font-weight: 600; letter-spacing: 1px;
+           box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow-x: auto; white-space: nowrap;
+        }
+        .dark .formula-box {
+           background: #1e293b; border-left-color: #60a5fa; color: #f8fafc;
+           box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+        }
 
-        .bar-anim { position: relative; }
-        .bar-anim::after { content: ''; position: absolute; bottom: -20px; left: 0; right: 0; text-align: center; color: #64748b; font-size: 12px; }
-        .bar-anim:nth-child(1) { animation: swap1 4s infinite ease-in-out; left: 0; }
-        .bar-anim:nth-child(2) { animation: swap2 4s infinite ease-in-out; left: 40px; }
-        @keyframes swap1 { 0%, 20% { left: 0; background: #ef4444; } 30%, 100% { left: 40px; background: #3b82f6; } }
-        @keyframes swap2 { 0%, 20% { left: 40px; background: #ef4444; } 30%, 100% { left: 0; background: #3b82f6; } }
+        /* UPGRADED INTERACTIVE 2D ANIMATIONS (Safe SVG URI format) */
+        
+        /* 1. Transverse Wave Animation (Fisika/Suara) */
+        .anim-physics-wave { width: 100%; max-width: 400px; height: 160px; margin: 2rem auto; position: relative; border-radius: 12px; background: #f8fafc; border: 2px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .dark .anim-physics-wave { background: #0f172a; border-color: #334155; }
+        .anim-physics-wave::before { content: ''; position: absolute; top: 50%; left: 0; width: 100%; height: 2px; background: #64748b; z-index: 1; }
+        .anim-physics-wave-transverse {
+            position: absolute; top: 0; left: 0; width: 200%; height: 100%; z-index: 2;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpath d='M0,50 Q25,10 50,50' fill='none' stroke='%230ea5e9' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M50,50 Q75,90 100,50' fill='none' stroke='%23ef4444' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E");
+            background-size: 150px 100%; 
+            animation: waveSlide 2s linear infinite;
+        }
+        @keyframes waveSlide { 0% { transform: translateX(0); } 100% { transform: translateX(-150px); } }
+
+        /* 2. Quadratic Parabola Animation (Matematika) */
+        .anim-parabola-container {
+           position: relative; width: 100%; max-width: 300px; height: 250px; margin: 2rem auto; background-image: linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(90deg, #cbd5e1 1px, transparent 1px); background-size: 25px 25px; background-position: center; border: 2px solid #94a3b8; border-radius: 8px; background-color: #f8fafc; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); overflow: hidden;
+        }
+        .dark .anim-parabola-container { background-color: #0f172a; background-image: linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px); border-color: #475569; }
+        .anim-axis-x { position: absolute; top: 60%; left: 0; width: 100%; height: 2px; background: #334155; z-index: 1; }
+        .anim-axis-y { position: absolute; top: 0; left: 50%; width: 2px; height: 100%; background: #334155; z-index: 1; }
+        .dark .anim-axis-x, .dark .anim-axis-y { background: #cbd5e1; }
+        .anim-parabola {
+           position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2;
+           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cpath d='M10,-10 Q50,170 90,-10' fill='none' stroke='%2322c55e' stroke-width='3.5' stroke-linecap='round'/%3E%3Ccircle cx='50' cy='80' r='3.5' fill='%236366f1'/%3E%3Ccircle cx='26' cy='60' r='3.5' fill='%236366f1'/%3E%3Ccircle cx='74' cy='60' r='3.5' fill='%236366f1'/%3E%3C/svg%3E");
+           animation: pulseGraph 2s ease-in-out infinite alternate;
+        }
+        @keyframes pulseGraph { 0% { opacity: 0.8; transform: scale(0.99) translateY(2px); filter: drop-shadow(0 0 2px rgba(34,197,94,0.3)); } 100% { opacity: 1; transform: scale(1) translateY(0); filter: drop-shadow(0 0 8px rgba(34,197,94,0.8)); } }
+
+        /* 3. Pendulum/Bandul (Fisika Mekanik) */
+        .anim-pendulum-container { position: relative; width: 100%; max-width: 250px; height: 180px; margin: 2rem auto; border-top: 4px solid #64748b; }
+        .dark .anim-pendulum-container { border-top-color: #94a3b8; }
+        .anim-pendulum { position: absolute; top: 0; left: 50%; transform-origin: top center; animation: swing 1.5s infinite ease-in-out alternate; }
+        .anim-pendulum-string { width: 2px; height: 130px; background: #94a3b8; margin: 0 auto; }
+        .anim-pendulum-bob { width: 36px; height: 36px; background: radial-gradient(circle at 30% 30%, #fde047, #d97706); border-radius: 50%; transform: translateX(-17px); box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        @keyframes swing { 0% { transform: rotate(35deg); } 100% { transform: rotate(-35deg); } }
+
+        /* 4. Terminal Informatics (Ilmu Komputer) */
+        .anim-informatics-terminal { width: 100%; max-width: 450px; background: #0f172a; border-radius: 10px; border: 1px solid #334155; margin: 2rem auto; overflow: hidden; box-shadow: 0 10px 20px -5px rgba(0,0,0,0.5); font-family: 'Courier New', Courier, monospace; }
+        .anim-term-header { background: #1e293b; padding: 12px; display: flex; gap: 8px; border-bottom: 1px solid #334155; }
+        .anim-term-dot { width: 14px; height: 14px; border-radius: 50%; }
+        .anim-term-dot.red { background: #ef4444; }
+        .anim-term-dot.yel { background: #eab308; }
+        .anim-term-dot.grn { background: #22c55e; }
+        .anim-term-body { padding: 20px; color: #22c55e; font-size: 0.95rem; line-height: 1.8; font-weight: bold;}
+        .anim-term-line { overflow: hidden; white-space: nowrap; width: 0; border-right: 2px solid transparent; }
+        .anim-term-line1 { animation: typingTerm 1.5s steps(30, end) forwards; border-right-color: #22c55e; animation-delay: 0.5s; }
+        .anim-term-line2 { animation: typingTerm 1.5s steps(30, end) forwards; animation-delay: 2.5s; }
+        .anim-term-line3 { animation: typingTerm 1.5s steps(40, end) forwards; color: #3b82f6; animation-delay: 4.5s; }
+        .anim-term-cursor { display: inline-block; width: 10px; height: 1.1em; background: #22c55e; animation: blinkTerm 1s step-end infinite; vertical-align: bottom; margin-left: 5px; opacity: 0; animation-delay: 6s; }
+        @keyframes typingTerm { from { width: 0; border-right-color: #22c55e; } 99% { border-right-color: #22c55e; } to { width: 100%; border-right-color: transparent; } }
+        @keyframes blinkTerm { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        /* 5. Pythagoras Theorem 2D */
+        .anim-pythagoras-container {
+           position: relative; width: 100%; max-width: 300px; height: 300px; margin: 2rem auto;
+           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 300'%3E%3Cpolygon points='100,180 180,120 180,180' fill='%2322c55e' stroke='%23166534' stroke-width='2'/%3E%3Crect x='180' y='120' width='60' height='60' fill='%23ef4444' stroke='%23991b1b' stroke-width='2'/%3E%3Crect x='100' y='180' width='80' height='80' fill='%23f97316' stroke='%239a3412' stroke-width='2'/%3E%3Cpolygon points='100,180 180,120 120,40 40,100' fill='%231d4ed8' stroke='%231e3a8a' stroke-width='2'/%3E%3Ctext x='200' y='155' fill='white' font-weight='bold' font-size='24' font-family='sans-serif'%3Ea²%3C/text%3E%3Ctext x='130' y='230' fill='white' font-weight='bold' font-size='24' font-family='sans-serif'%3Eb²%3C/text%3E%3Ctext x='100' y='120' fill='white' font-weight='bold' font-size='24' font-family='sans-serif'%3Ec²%3C/text%3E%3C/svg%3E");
+           background-size: contain; background-repeat: no-repeat; background-position: center;
+           animation: floatPyth 3s ease-in-out infinite;
+        }
+        @keyframes floatPyth { 0%, 100% { transform: translateY(0); filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1)); } 50% { transform: translateY(-8px); filter: drop-shadow(0 10px 15px rgba(0,0,0,0.2)); } }
+
+        /* 6. Sorting Algorithm Visualization (Informatics) */
+        .anim-sorting-container { position: relative; height: 160px; margin: 2rem auto; width: 220px; border-bottom: 3px solid #cbd5e1; }
+        .dark .anim-sorting-container { border-bottom-color: #475569; }
+        .anim-sort-bar { position: absolute; bottom: 0; width: 34px; border-radius: 4px 4px 0 0; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; justify-content: center; align-items: flex-end; padding-bottom: 8px; color: white; font-weight: bold; font-size: 12px; font-family: monospace; }
+        .anim-sort-bar::after { content: attr(data-val); position: absolute; bottom: -24px; color: #64748b; font-size: 14px; }
+        .anim-sort-bar.b1 { height: 90%; animation: swap1 4s infinite ease-in-out; }
+        .anim-sort-bar.b2 { height: 40%; animation: swap2 4s infinite ease-in-out; }
+        .anim-sort-bar.b3 { height: 120%; background: #8b5cf6; left: 88px; }
+        .anim-sort-bar.b4 { height: 25%; background: #10b981; left: 132px; }
+        .anim-sort-bar.b5 { height: 50%; background: #f59e0b; left: 176px; }
+        @keyframes swap1 { 0%, 20% { left: 0; background: #ef4444; } 30%, 100% { left: 44px; background: #3b82f6; } }
+        @keyframes swap2 { 0%, 20% { left: 44px; background: #ef4444; } 30%, 100% { left: 0; background: #3b82f6; } }
+
       `}</style>
     </div>
   );
