@@ -8,12 +8,7 @@ import {
 } from 'lucide-react';
 
 // =====================================================================
-// 0. IMPORT SDK AI GOOGLE RESMI
-// =====================================================================
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-// =====================================================================
-// 1. INISIALISASI FIREBASE
+// 1. INISIALISASI FIREBASE (DIKEMBALIKAN UTUH 100%)
 // =====================================================================
 import { initializeApp } from 'firebase/app';
 import { 
@@ -66,7 +61,7 @@ const formatTimeHMDetailed = (seconds) => {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
-const calculateLevel = (xp) => Math.floor(xp / 1000) + 1;
+const calculateLevel = (xp) => Math.floor((xp || 0) / 1000) + 1;
 const xpForNextLevel = (level) => level * 1000;
 
 // =====================================================================
@@ -329,6 +324,7 @@ const AuthScreen = ({ onLogin, theme, toggleTheme }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative">
+      {/* POP-UP ANIMASI SUKSES LOGIN */}
       {showSuccessPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm transition-opacity">
            <div className="bg-white dark:bg-gray-800 p-8 rounded-[24px] shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 border border-green-100 dark:border-green-900/50 animate-pop-in text-center relative overflow-hidden">
@@ -1255,7 +1251,7 @@ const AnalyticsView = ({ user }) => {
 };
 
 // =====================================================================
-// 8. VIEW SUMMARIZER (AUTO-FALLBACK API NATIVE FETCH)
+// 8. SUMMARIZER DENGAN FITUR LENGKAP (3D ANIMASI, KUIS & OPENROUTER)
 // =====================================================================
 
 const get3DIframe = (type) => {
@@ -1271,7 +1267,7 @@ const get3DIframe = (type) => {
             
             const electrons = [];
             const orbits = [1.5, 2.2, 3.0];
-            orbits.forEach((r, i) => {
+            orbits.forEach((r) => {
                 const orbit = new THREE.Mesh(new THREE.TorusGeometry(r, 0.02, 16, 100), new THREE.MeshBasicMaterial({color: 0x3b82f6, wireframe: true}));
                 orbit.rotation.x = Math.random() * Math.PI;
                 orbit.rotation.y = Math.random() * Math.PI;
@@ -1285,9 +1281,7 @@ const get3DIframe = (type) => {
             function updateScene() {
                 electrons.forEach(e => {
                     e.angle += e.speed;
-                    const x = Math.cos(e.angle) * e.radius;
-                    const y = Math.sin(e.angle) * e.radius;
-                    const pos = new THREE.Vector3(x, y, 0);
+                    const pos = new THREE.Vector3(Math.cos(e.angle) * e.radius, Math.sin(e.angle) * e.radius, 0);
                     pos.applyEuler(e.orbitPlane.rotation);
                     e.mesh.position.copy(pos);
                 });
@@ -1357,16 +1351,12 @@ const get3DIframe = (type) => {
                 const y = (i - 7.5) * 0.4;
                 const angle = i * 0.5;
 
-                const x1 = Math.cos(angle) * 1.2;
-                const z1 = Math.sin(angle) * 1.2;
                 const s1 = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), mat1);
-                s1.position.set(x1, y, z1);
+                s1.position.set(Math.cos(angle) * 1.2, y, Math.sin(angle) * 1.2);
                 dnaGroup.add(s1);
 
-                const x2 = Math.cos(angle + Math.PI) * 1.2;
-                const z2 = Math.sin(angle + Math.PI) * 1.2;
                 const s2 = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), mat2);
-                s2.position.set(x2, y, z2);
+                s2.position.set(Math.cos(angle + Math.PI) * 1.2, y, Math.sin(angle + Math.PI) * 1.2);
                 dnaGroup.add(s2);
 
                 const link = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4, 8), linkMat);
@@ -1516,63 +1506,47 @@ const SummarizerView = () => {
   const [showExplanation, setShowExplanation] = useState(false);
   const [quizError, setQuizError] = useState('');
 
-  // FUNGSI INTI AI DENGAN "MODE DETEKTIF KUNCI"
-  const callGeminiAPI = async (promptText, systemInstruction, responseMimeType = "text/plain") => {
-    
-    // Memanggil API Key langsung dari Vite environment
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  // =========================================================================
+  // FUNGSI API OPENROUTER (PENGGANTI GOOGLE SDK YANG ERROR)
+  // =========================================================================
+  const callOpenRouterAPI = async (promptText, systemInstruction) => {
+    let apiKey = "";
+    try {
+        // eslint-disable-next-line
+        apiKey = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_OPENROUTER_API_KEY : "";
+    } catch(e) {}
 
     if (!apiKey) {
-        throw new Error("🚨 KUNCI KOSONG: Variabel VITE_GEMINI_API_KEY tidak ditemukan di Netlify.");
+        throw new Error("🚨 Kunci API Kosong. Variabel VITE_OPENROUTER_API_KEY belum terdeteksi di Vercel. Pastikan sudah di-save dan di-Redeploy!");
     }
-
-    // MODE DETEKTIF: Menyembunyikan sebagian besar kunci tapi memperlihatkan awalnya
-    const maskedKey = apiKey.substring(0, 10) + "...";
-
-    // Pengecekan Kunci Firebase
-    // AIzaSyBjpq... adalah kunci Firebase kamu yang ada di atas
-    if (apiKey.includes("BjpqMOM") || apiKey.includes("AIzaSyBjpq")) {
-         throw new Error(`🚨 TERCIDUK! Netlify masih membaca Kunci Firebase kamu (${maskedKey}). Tolong ganti isian VITE_GEMINI_API_KEY di Netlify dengan kunci dari AI Studio!`);
-    }
-
-    // Hanya menggunakan satu model terbaru agar lebih cepat
-    const modelName = "gemini-1.5-flash";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
     try {
-        const payload = {
-            contents: [{ role: "user", parts: [{ text: promptText }] }],
-        };
-
-        if (systemInstruction) {
-            payload.systemInstruction = { parts: [{ text: systemInstruction }] };
-        }
-
-        if (responseMimeType === "application/json") {
-            payload.generationConfig = { responseMimeType: "application/json" };
-        }
-
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "HTTP-Referer": window.location.origin || "https://telago.app",
+                "X-Title": "TELAGO App",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: "google/gemini-2.5-flash", // Tetap menggunakan kecerdasan Gemini!
+                messages: [
+                    { role: "system", content: systemInstruction },
+                    { role: "user", content: promptText }
+                ]
+            })
         });
 
         const data = await response.json();
 
         if (!response.ok) {
-            if (response.status === 404) {
-               throw new Error(`🚨 ERROR 404: Kunci yang dipakai aplikasi saat ini adalah (${maskedKey}). Google menolak kunci ini karena fitur AI Generative Language API tidak aktif di kunci tersebut. Cek kembali isian variabel di Netlify!`);
-            }
-            throw new Error(data.error?.message || `Gagal API: ${response.status}`);
+            throw new Error(`OpenRouter Error: ${data.error?.message || response.statusText}`);
         }
 
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-            return text; 
-        } else {
-            throw new Error("Respons AI kosong.");
-        }
+        const text = data.choices?.[0]?.message?.content;
+        if (text) return text;
+        throw new Error("Respons AI kosong.");
 
     } catch (err) {
         throw err;
@@ -1590,10 +1564,13 @@ const SummarizerView = () => {
       const systemInstruction = "Anda adalah ELGO, asisten AI dari TELAGO. Jelaskan materi dengan gaya interaktif dan profesional. Gunakan HTML murni. Wajib gunakan <div class=\"formula-box\"> untuk rumus matematika. Wajib selektif dan pintar dalam memilih animasi, jangan pasang animasi yang salah konteks atau tidak relevan.";
       const prompt = `Tolong ringkas dan jelaskan materi/topik berikut secara komprehensif:\n\n${topicInput}\n\nInstruksi Format WAJIB:\n1. Output HARUS berupa format HTML murni yang rapi (gunakan <h3>, <p>, <ul>, <li>, <b>). JANGAN gunakan markdown (\`\`\`).\n2. Gunakan tag <mark> HANYA untuk 3-5 kata kunci paling penting.\n3. RUMUS/PERSAMAAN MATEMATIKA: WAJIB gunakan <div class="formula-box">RUMUS ATAU PERSAMAAN DISINI</div> agar terlihat elegan dan profesional. Gunakan simbol matematika yang tepat (seperti ∑, √, ±, ², ³).\n4. ANIMASI: SANGAT PENTING! HANYA sisipkan SATU animasi JIKA BENAR-BENAR SANGAT RELEVAN DENGAN TOPIK. JIKA TOPIK TIDAK RELEVAN SAMA SEKALI (Contoh: Ekonomi, Sastra, Sosial, dll), DILARANG KERAS MEMASANG ANIMASI APAPUN.\n Pilihan Animasi (pilih 1 yang paling akurat):\n - 3D Struktur Atom (Kimia/Fisika Kuantum): [ANIMASI_3D_ATOM]\n - 3D Senyawa/Molekul H2O (Kimia Dasar): [ANIMASI_3D_MOLEKUL]\n - 3D Tata Surya (Astronomi): [ANIMASI_3D_TATA_SURYA]\n - 3D Bumi/Globe (Geografi/Sejarah Global): [ANIMASI_3D_BUMI]\n - 3D Geometri (Matematika Ruang): [ANIMASI_3D_GEOMETRI]\n - 3D DNA (Biologi/Genetika): [ANIMASI_3D_DNA]\n - 2D Gelombang (Fisika/Suara): <div class="anim-physics-wave"><div class="anim-physics-wave-transverse"></div></div>\n - 2D Teorema Pythagoras (Matematika Segitiga): <div class="anim-pythagoras-container"></div>\n - 2D Grafik Kuadrat (Fungsi Parabola): <div class="anim-parabola-container"><div class="anim-axis-x"></div><div class="anim-axis-y"></div><div class="anim-parabola"></div></div>\n - 2D Bandul/Pendulum (Fisika Mekanik): <div class="anim-pendulum-container"><div class="anim-pendulum"><div class="anim-pendulum-string"></div><div class="anim-pendulum-bob"></div></div></div>\n - 2D Informatika/Algoritma/Sorting: <div class="anim-sorting-container"><div class="anim-sort-bar b1" data-val="64"></div><div class="anim-sort-bar b2" data-val="34"></div><div class="anim-sort-bar b3" data-val="90"></div><div class="anim-sort-bar b4" data-val="12"></div><div class="anim-sort-bar b5" data-val="22"></div></div>\n - 2D Informatika/Koding/Terminal: <div class="anim-informatics-terminal"><div class="anim-term-header"><div class="anim-term-dot red"></div><div class="anim-term-dot yel"></div><div class="anim-term-dot grn"></div></div><div class="anim-term-body"><div class="anim-term-line anim-term-line1">> Initialize Module...</div><div class="anim-term-line anim-term-line2">> Compiling Data...</div><div class="anim-term-line anim-term-line3">> Execution Successful! <span class="anim-term-cursor"></span></div></div></div>\nSekali lagi, tempatkan tag animasi tersebut HANYA SATU KALI jika topiknya benar-benar cocok.`;
       
-      let text = await callGeminiAPI(prompt, systemInstruction);
+      let text = await callOpenRouterAPI(prompt, systemInstruction);
       
       if (text) {
+         // Bersihkan markdown HTML dari OpenRouter
          text = text.replace(/```html\n?/gi, '').replace(/```\n?/g, '');
+         
+         // Parsing Animasi 3D
          text = text.replace(/\[ANIMASI_3D_ATOM\]/gi, get3DIframe('atom'));
          text = text.replace(/\[ANIMASI_3D_TATA_SURYA\]/gi, get3DIframe('solar'));
          text = text.replace(/\[ANIMASI_3D_GEOMETRI\]/gi, get3DIframe('geometry'));
@@ -1617,10 +1594,11 @@ const SummarizerView = () => {
     
     try {
        const systemInstruction = `Anda adalah guru ahli yang membuat soal evaluasi berkualitas. Anda HARUS mengembalikan data HANYA dalam format JSON array murni tanpa dibungkus markdown apapun. Format JSON wajib seperti ini:\n[\n  {\n    "question": "Pertanyaan soal disini",\n    "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],\n    "correctIndex": 0,\n    "explanation": "Penjelasan detail dan rasional mengapa opsi tersebut benar."\n  }\n]\nPerhatikan: correctIndex adalah angka index (0-3) dari jawaban yang benar.`;
-       const prompt = `Buatkan kuis pilihan ganda berjumlah persis 5 soal berdasarkan topik: "${topicInput}". Kuis ini harus berstandar pendidikan kurikulum Indonesia, berkualitas tinggi, dan menguji pemahaman mendalam.`;
+       const prompt = `Buatkan kuis pilihan ganda berjumlah persis 5 soal berdasarkan topik: "${topicInput}". Kuis ini harus berstandar pendidikan tinggi, berkualitas, dan menguji pemahaman mendalam.`;
 
-       let text = await callGeminiAPI(prompt, systemInstruction, "application/json");
+       let text = await callOpenRouterAPI(prompt, systemInstruction);
        
+       // Bersihkan markdown JSON dari OpenRouter
        text = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
        const qData = JSON.parse(text);
 
@@ -1943,7 +1921,7 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [theme, setTheme] = useState('light');
 
-  // Menggunakan onAuthStateChanged milik Firebase (DIKEMBALIKAN)
+  // Menggunakan onAuthStateChanged milik Firebase 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
@@ -1952,7 +1930,7 @@ export default function App() {
         const userSnap = await getDoc(userRef);
         if (userSnap.exists()) {
           setCurrentUser(userSnap.data());
-          setView('dashboard'); // PERBAIKAN 2: OTOMATIS REDIRECT KE DASHBOARD SAAT BERHASIL LOGIN
+          setView('dashboard'); 
         }
       } else {
         setCurrentUser(null);
@@ -2001,7 +1979,7 @@ export default function App() {
     }).catch(console.error);
   };
 
-  // PERBAIKAN 3: FUNGSI NAVIGASI YANG MENCEGAH TIMER REFRESH
+  // FUNGSI NAVIGASI YANG MENCEGAH TIMER REFRESH
   const navigate = (newView, config) => {
     setView(newView);
     if (config !== undefined) {
@@ -2066,7 +2044,7 @@ export default function App() {
     },
   ];
 
-  // PERBAIKAN 3: MEMUNCULKAN MENU "TIMER AKTIF" JIKA TIMER SEDANG BERJALAN
+  // MEMUNCULKAN MENU "TIMER AKTIF" JIKA TIMER SEDANG BERJALAN
   const navItems = timerConfig ? [
     baseNavItems[0],
     {
@@ -2185,7 +2163,7 @@ export default function App() {
             <div className="flex-1 overflow-y-auto w-full">
               <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto w-full pb-28 lg:pb-8 relative">
                 
-                {/* PERBAIKAN 3: MEMBUAT TIMER BERJALAN DI LATAR BELAKANG (TIDAK REFRESH) */}
+                {/* MEMBUAT TIMER BERJALAN DI LATAR BELAKANG (TIDAK REFRESH) */}
                 <div className={view === 'dashboard' ? 'block' : 'hidden'}>
                   <Dashboard user={currentUser} changeView={navigate} onSync={syncData} />
                 </div>
