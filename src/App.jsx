@@ -1527,7 +1527,7 @@ const SummarizerView = () => {
   // FUNGSI INTI AI: AUTO-FALLBACK MODEL (ANTI ERROR 404)
   const callGeminiAPI = async (promptText, systemInstruction, responseMimeType = "text/plain") => {
     
-    if (GEMINI_API_KEY === import.meta.env.VITE_GEMINI_API_KEY) {
+    if (GEMINI_API_KEY === "GANTI_SAYA_DI_VSCODE") {
         throw new Error("🚨 KODE BELUM DIUBAH! Buka App.jsx di VS Code, cari teks 'GANTI_SAYA_DI_VSCODE', lalu ganti dengan: import.meta.env.VITE_GEMINI_API_KEY");
     }
 
